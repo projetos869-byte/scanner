@@ -1,0 +1,44 @@
+# Git e IDE
+.git
+.gitignore
+.vscode
+.idea
+*.code-workspace
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+.venv
+venv
+ENV
+
+# Build do scanner (exe / PyInstaller)
+scanner/build
+scanner/dist
+scanner/*.spec
+scanner/build_exe.bat
+
+# Debug e testes locais
+scanner/debug_matricula
+scanner/minhas_folhas
+scanner/*.xlsx
+scanner/*.xltm
+scanner/*.png
+scanner/*.csv
+scanner/resultado.xlsx
+scanner/matriculas.xlsx
+scanner/matriculas_completo.xlsx
+scanner/funcionarios.xlsx
+scanner/controle_treinamentos_profissional.xltm
+
+# Documentação (opcional: remova se quiser dentro da imagem)
+# *.md
+
+# Outros
+*.log
+.DS_Store
+Thumbs.db

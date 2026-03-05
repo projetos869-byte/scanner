@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+ENV/
+.env
+*.egg-info/
+.eggs/
+
+# Build scanner (exe)
+scanner/build/
+scanner/dist/
+scanner/*.spec
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
