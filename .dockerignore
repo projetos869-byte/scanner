@@ -22,6 +22,9 @@ scanner/dist
 scanner/*.spec
 scanner/build_exe.bat
 
+# API não usa OCR de cabeçalho (só matrículas + assinaturas) — reduz tamanho da imagem
+scanner/extrair_cabecalho.py
+
 # Debug e testes locais
 scanner/debug_matricula
 scanner/minhas_folhas

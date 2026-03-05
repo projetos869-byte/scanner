@@ -78,31 +78,29 @@ def _resposta_csv_ou_json(request: Request, retorno: str | None, csv_body: str, 
 @app.post("/scan")
 def scan(
     request: Request,
-    images: list[UploadFile] = File(...),
     data: str = Form(...),
     id_treinamento: str = Form(...),
     nome_treinamento: str | None = Form(None),
     retorno: str | None = Form(None),
+    images: list[UploadFile] = File(..., alias="images", description="Arquivo(s) de imagem (PNG, JPG, etc.) — envie como multipart/form-data, campo 'images'"),
 ):
     """
-    Recebe imagens da lista de presença, data e id do treinamento.
+    Recebe **arquivos de imagem** da lista de presença (multipart/form-data), data e id do treinamento.
+    Campo obrigatório: **images** — um ou mais arquivos de imagem (não texto).
     Retorna JSON ou CSV (se retorno=csv ou Accept: text/csv) para a aba ListaScanner.
     """
     data_arq = data.replace("/", "-").replace(".", "-").strip()
     nome_arquivo = f"presenca_{id_treinamento}_{data_arq}.csv"
     csv_vazio = "\ufeffNome_Treinamento;Matrícula\n"
 
-    from ler_documento_completo import (
-        extrair_matriculas_e_assinaturas,
-    )
-    from extrair_cabecalho import extrair_cabecalho_documento
+    from ler_documento_completo import extrair_matriculas_e_assinaturas
 
     # Ordenar por nome para manter ordem das folhas
     imagens_ordenadas = sorted(images, key=lambda f: (f.filename or "").lower())
     if not imagens_ordenadas:
         return _resposta_csv_ou_json(request, retorno, csv_vazio, "Nenhuma imagem enviada", nome_arquivo)
 
-    # Carregar imagens (bytes → numpy)
+    # Ler cada arquivo de imagem (bytes) e converter para array OpenCV
     listas_imagens = []
     for up in imagens_ordenadas:
         content = up.file.read()
@@ -159,15 +157,15 @@ def scan(
         csv_str = _gerar_csv_string(nome_treinamento or id_treinamento, [])
         return _resposta_csv_ou_json(request, retorno, csv_str, "Nenhuma matrícula encontrada no OCR", nome_arquivo)
 
-    matriculas_presentes = df["matricula"].astype(str).str.strip().tolist()
-
-    # Nome do treinamento: parâmetro opcional, ou OCR do cabeçalho da primeira imagem
-    if nome_treinamento and nome_treinamento.strip():
-        nome_final = nome_treinamento.strip()
+    # Só considera presente quem tem assinatura detectada (coluna assinou); se não existir, usa todas as matrículas
+    if "assinou" in df.columns:
+        df_presentes = df[df["assinou"] == True]
     else:
-        nome_final, _ = extrair_cabecalho_documento(listas_imagens[0])
-        if not nome_final:
-            nome_final = id_treinamento
+        df_presentes = df
+    matriculas_presentes = df_presentes["matricula"].astype(str).str.strip().tolist()
+
+    # Nome do treinamento: vem do form ou id_treinamento (sem OCR de cabeçalho — reduz tamanho e dependências)
+    nome_final = (nome_treinamento or id_treinamento).strip()
 
     csv_str = _gerar_csv_string(nome_final, matriculas_presentes)
     return _resposta_csv_ou_json(request, retorno, csv_str, None, nome_arquivo, len(matriculas_presentes))
