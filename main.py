@@ -20,6 +20,8 @@ os.chdir(_APP_DIR)
 warnings.filterwarnings("ignore", message=".*pin_memory.*", category=UserWarning)
 warnings.filterwarnings("ignore", category=UserWarning, module="torch")
 
+from typing import Annotated
+
 import numpy as np
 import cv2
 from fastapi import FastAPI, UploadFile, File, Form, Request
@@ -27,6 +29,37 @@ from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Scanner OCR API", version="1.0")
+
+
+def _custom_openapi():
+    """Garante que o campo 'images' no /scan seja schema de arquivo (format: binary) no Swagger."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    # Ajustar requestBody do POST /scan para images = array de arquivo (binary)
+    for path, path_item in (schema.get("paths") or {}).items():
+        if path != "/scan":
+            continue
+        post = path_item.get("post")
+        if not post:
+            continue
+        content = post.get("requestBody", {}).get("content", {}).get("multipart/form-data")
+        if not content or "schema" not in content:
+            continue
+        props = content["schema"].get("properties") or {}
+        if "images" in props:
+            props["images"] = {
+                "type": "array",
+                "items": {"type": "string", "format": "binary"},
+                "description": "Arquivo(s) de imagem (PNG, JPG, etc.) — use Choose File",
+            }
+        break
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = _custom_openapi
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,7 +115,7 @@ def scan(
     id_treinamento: str = Form(...),
     nome_treinamento: str | None = Form(None),
     retorno: str | None = Form(None),
-    images: list[UploadFile] = File(..., alias="images", description="Arquivo(s) de imagem (PNG, JPG, etc.) — envie como multipart/form-data, campo 'images'"),
+    images: Annotated[list[UploadFile], File(description="Arquivo(s) de imagem — use o botão Choose File")],
 ):
     """
     Recebe **arquivos de imagem** da lista de presença (multipart/form-data), data e id do treinamento.
