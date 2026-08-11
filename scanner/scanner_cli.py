@@ -1,4 +1,4 @@
-"""
+r"""
 Ponto de entrada para o scanner.exe.
 Fluxo: Excel chama o exe → exe faz OCR → atualiza a planilha Excel → abre/salva e fecha.
 
@@ -11,11 +11,6 @@ import os
 import sys
 import argparse
 import subprocess
-import warnings
-
-# Suprime aviso do PyTorch quando não há GPU (pin_memory); o scanner funciona normal na CPU
-warnings.filterwarnings("ignore", message=".*pin_memory.*", category=UserWarning)
-warnings.filterwarnings("ignore", category=UserWarning, module="torch")
 
 # Pasta do exe (quando congelado) ou do script
 if getattr(sys, "frozen", False):
@@ -76,15 +71,15 @@ def main():
     primeira = lista[0]
     if usar_varias:
         df = extrair_matriculas_e_assinaturas_varias_folhas(
-            lista, faixa_x=(0.05, 0.38), ratio_assinatura=(0.50, 0.88),
+            lista, faixa_x=(0.05, 0.38), ratio_assinatura=(0.55, 0.80),
             score_threshold_assinatura=0.018, min_digitos=4, max_digitos=7,
-            usar_easyocr=True, matriculas_manuscritas=False,
+            matriculas_manuscritas=False,
         )
     else:
         df = extrair_matriculas_e_assinaturas(
-            primeira, faixa_x=(0.05, 0.38), ratio_assinatura=(0.50, 0.88),
+            primeira, faixa_x=(0.05, 0.38), ratio_assinatura=(0.55, 0.80),
             score_threshold_assinatura=0.018, min_digitos=4, max_digitos=7,
-            usar_easyocr=True, matriculas_manuscritas=False,
+            matriculas_manuscritas=False,
         )
         if not df.empty:
             df.insert(0, "folha", 1)
@@ -96,7 +91,9 @@ def main():
         return 0
 
     # Matrículas presentes (quem estava na lista de presença lida pelo OCR)
-    matriculas_presentes = df["matricula"].astype(str).str.strip().tolist()
+    presentes = df[df["assinou"] == True].copy() if "assinou" in df.columns else df.copy()
+    matriculas_presentes = presentes["matricula"].astype(str).str.strip().tolist()
+    nomes_presentes = presentes["nome"].fillna("").astype(str).str.strip().tolist() if "nome" in presentes.columns else [""] * len(presentes)
 
     # Só gera CSV no modo relacional (--data e --id-treinamento); planilha = controle_treinamentos_profissional
     if modo_relacional:
@@ -109,7 +106,7 @@ def main():
         if not nome_treino:
             nome_treino = id_treino
         gerar_csv_presenca(
-            data_str, id_treino, matriculas_presentes,
+            data_str, id_treino, matriculas_presentes, nomes_presentes=nomes_presentes,
             nome_treinamento=nome_treino, pasta_saida=_SCRIPT_DIR,
         )
 

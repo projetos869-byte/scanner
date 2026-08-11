@@ -1,6 +1,6 @@
 """
 Estratégia: ler TODO o documento com OCR (página inteira) e extrair TODAS as matrículas.
-Usa rede (EasyOCR) ou Tesseract com bbox; filtra por posição (coluna MATRÍCULA) e padrão (5–7 dígitos).
+Usa Tesseract com bbox; filtra por posição (coluna MATRÍCULA) e padrão (5–7 dígitos).
 Objetivo: fazer funcionar e mostrar todas as matrículas.
 """
 
@@ -61,51 +61,6 @@ def _eh_matricula_valida(
     if min_len <= len(dig) <= max_len:
         return dig
     return None
-
-
-_EASYOCR_READER = None
-
-
-def _get_easyocr_reader():
-    global _EASYOCR_READER
-    if _EASYOCR_READER is None:
-        try:
-            import warnings
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", UserWarning)
-                import easyocr
-                _EASYOCR_READER = easyocr.Reader(["pt", "en"], gpu=False, verbose=False)
-        except Exception:
-            pass
-    return _EASYOCR_READER
-
-
-def _ocr_pagina_inteira_easyocr(imagem: np.ndarray) -> List[Tuple[float, float, str, float]]:
-    """
-    EasyOCR na imagem inteira. Retorna lista de (center_x, center_y, texto, confiança).
-    """
-    reader = _get_easyocr_reader()
-    if reader is None:
-        return []
-    if len(imagem.shape) == 2:
-        img_rgb = cv2.cvtColor(imagem, cv2.COLOR_GRAY2RGB)
-    else:
-        img_rgb = cv2.cvtColor(imagem, cv2.COLOR_BGR2RGB)
-    try:
-        resultados = reader.readtext(img_rgb)
-    except Exception:
-        return []
-    out = []
-    for bbox, texto, conf in resultados:
-        if not texto or not bbox:
-            continue
-        # bbox: [[x1,y1],[x2,y1],[x2,y2],[x1,y2]]
-        xs = [p[0] for p in bbox]
-        ys = [p[1] for p in bbox]
-        cx = (min(xs) + max(xs)) / 2
-        cy = (min(ys) + max(ys)) / 2
-        out.append((cx, cy, texto.strip(), float(conf)))
-    return out
 
 
 def _preprocessar_para_manuscrito(imagem: np.ndarray) -> np.ndarray:
@@ -172,7 +127,6 @@ def extrair_todas_matriculas(
     faixa_x: Tuple[float, float] = (0.06, 0.35),
     min_digitos: int = 4,
     max_digitos: int = 7,
-    usar_easyocr: bool = True,
     normalizar_imagem: bool = True,
     ignorar_cabecalho: bool = True,
     altura_cabecalho_px: int = 80,
@@ -199,12 +153,8 @@ def extrair_todas_matriculas(
     h, w = img.shape[:2]
     x_min = int(w * faixa_x[0])
     x_max = int(w * faixa_x[1])
-    deteccoes = []
-    if usar_easyocr:
-        deteccoes = _ocr_pagina_inteira_easyocr(img)
-    tesseract_det = _ocr_pagina_inteira_tesseract(img)
-    if tesseract_det:
-        deteccoes = deteccoes + tesseract_det
+    # Somente OCR clássico (Tesseract), sem rede neural.
+    deteccoes = _ocr_pagina_inteira_tesseract(img)
     if not deteccoes:
         return pd.DataFrame()
     mn, mx = (3, 8) if matriculas_manuscritas else (min_digitos, max_digitos)
@@ -296,7 +246,6 @@ def extrair_todas_matriculas_com_retry(
     faixa_x: Tuple[float, float] = (0.05, 0.38),
     min_digitos: int = 4,
     max_digitos: int = 7,
-    usar_easyocr: bool = True,
     unir_normalizado_e_cru: bool = True,
     retornar_imagem_usada: bool = False,
     matriculas_manuscritas: bool = False,
@@ -321,7 +270,6 @@ def extrair_todas_matriculas_com_retry(
         faixa_x=faixa_x,
         min_digitos=min_digitos,
         max_digitos=max_digitos,
-        usar_easyocr=usar_easyocr,
         normalizar_imagem=True,
         matriculas_manuscritas=matriculas_manuscritas,
     )
@@ -341,7 +289,6 @@ def extrair_todas_matriculas_com_retry(
         faixa_x=faixa_x,
         min_digitos=min_digitos,
         max_digitos=max_digitos,
-        usar_easyocr=usar_easyocr,
         normalizar_imagem=False,
         matriculas_manuscritas=matriculas_manuscritas,
     )
@@ -366,10 +313,31 @@ def extrair_todas_matriculas_com_retry(
     return chosen
 
 
+def _ocr_nome_celula(cell: np.ndarray) -> str:
+    """Le o nome impresso usando Tesseract, sem rede neural."""
+    try:
+        import pytesseract
+    except ImportError:
+        return ""
+    if cell is None or cell.size == 0:
+        return ""
+    gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY) if len(cell.shape) == 3 else cell
+    gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+    try:
+        texto = pytesseract.image_to_string(gray, lang="por", config=r"--oem 1 --psm 7")
+    except Exception:
+        try:
+            texto = pytesseract.image_to_string(gray, config=r"--oem 1 --psm 7")
+        except Exception:
+            return ""
+    return re.sub(r"\s+", " ", texto).strip(" |_-\t\r\n")
+
+
 def _adicionar_assinaturas_por_linha(
     img: np.ndarray,
     df: pd.DataFrame,
-    ratio_assinatura: Tuple[float, float] = (0.50, 0.88),
+    ratio_nome: Tuple[float, float] = (0.19, 0.55),
+    ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
     score_threshold_assinatura: float = 0.018,
 ) -> pd.DataFrame:
     """
@@ -378,6 +346,7 @@ def _adicionar_assinaturas_por_linha(
     """
     if img is None or img.size == 0 or df.empty or "y_centro" not in df.columns:
         df = df.copy()
+        df["nome"] = ""
         df["assinou"] = False
         df["score_assinatura"] = 0.0
         return df
@@ -385,16 +354,20 @@ def _adicionar_assinaturas_por_linha(
         from pipeline_foto_torta import assinatura_presente
     except ImportError:
         df = df.copy()
+        df["nome"] = ""
         df["assinou"] = False
         df["score_assinatura"] = 0.0
         return df
     h, w = img.shape[:2]
     x1 = int(w * ratio_assinatura[0])
     x2 = int(w * ratio_assinatura[1])
+    nome_x1 = int(w * ratio_nome[0])
+    nome_x2 = int(w * ratio_nome[1])
     ys = df["y_centro"].values
     n = len(ys)
     assinou_list = []
     score_list = []
+    nomes = []
     for i in range(n):
         yc = int(ys[i])
         if n == 1:
@@ -409,6 +382,9 @@ def _adicionar_assinaturas_por_linha(
         y1 = max(0, yc - dy)
         y2 = min(h, yc + dy)
         cell = img[y1:y2, x1:x2]
+        margem_y = max(2, (y2 - y1) // 10)
+        cell_nome = img[y1 + margem_y:max(y1 + margem_y + 1, y2 - margem_y), nome_x1:nome_x2]
+        nomes.append(_ocr_nome_celula(cell_nome))
         if cell.size == 0:
             assinou_list.append(False)
             score_list.append(0.0)
@@ -417,6 +393,7 @@ def _adicionar_assinaturas_por_linha(
         assinou_list.append(assinou)
         score_list.append(round(score, 6))
     out = df.copy()
+    out["nome"] = nomes
     out["assinou"] = assinou_list
     out["score_assinatura"] = score_list
     return out
@@ -425,11 +402,11 @@ def _adicionar_assinaturas_por_linha(
 def extrair_matriculas_e_assinaturas(
     caminho_ou_imagem: Union[str, np.ndarray],
     faixa_x: Tuple[float, float] = (0.05, 0.38),
-    ratio_assinatura: Tuple[float, float] = (0.50, 0.88),
+    ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
+    ratio_nome: Tuple[float, float] = (0.19, 0.55),
     score_threshold_assinatura: float = 0.018,
     min_digitos: int = 4,
     max_digitos: int = 7,
-    usar_easyocr: bool = True,
     matriculas_manuscritas: bool = False,
 ) -> pd.DataFrame:
     """
@@ -442,7 +419,6 @@ def extrair_matriculas_e_assinaturas(
         faixa_x=faixa_x,
         min_digitos=min_digitos,
         max_digitos=max_digitos,
-        usar_easyocr=usar_easyocr,
         unir_normalizado_e_cru=True,
         retornar_imagem_usada=True,
         matriculas_manuscritas=matriculas_manuscritas,
@@ -452,6 +428,7 @@ def extrair_matriculas_e_assinaturas(
     return _adicionar_assinaturas_por_linha(
         img_used,
         df,
+        ratio_nome=ratio_nome,
         ratio_assinatura=ratio_assinatura,
         score_threshold_assinatura=score_threshold_assinatura,
     )
@@ -460,11 +437,11 @@ def extrair_matriculas_e_assinaturas(
 def extrair_matriculas_e_assinaturas_varias_folhas(
     lista_caminhos: List[str],
     faixa_x: Tuple[float, float] = (0.05, 0.38),
-    ratio_assinatura: Tuple[float, float] = (0.50, 0.88),
+    ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
+    ratio_nome: Tuple[float, float] = (0.19, 0.55),
     score_threshold_assinatura: float = 0.018,
     min_digitos: int = 4,
     max_digitos: int = 7,
-    usar_easyocr: bool = True,
     matriculas_manuscritas: bool = False,
 ) -> pd.DataFrame:
     """
@@ -482,14 +459,14 @@ def extrair_matriculas_e_assinaturas_varias_folhas(
             caminho,
             faixa_x=faixa_x,
             ratio_assinatura=ratio_assinatura,
+            ratio_nome=ratio_nome,
             score_threshold_assinatura=score_threshold_assinatura,
             min_digitos=min_digitos,
             max_digitos=max_digitos,
-            usar_easyocr=usar_easyocr,
             matriculas_manuscritas=matriculas_manuscritas,
         )
         if df.empty:
-            df = pd.DataFrame(columns=["linha", "matricula", "confianca", "x_centro", "y_centro", "assinou", "score_assinatura"])
+            df = pd.DataFrame(columns=["linha", "matricula", "nome", "confianca", "x_centro", "y_centro", "assinou", "score_assinatura"])
         df.insert(0, "folha", idx)
         df.insert(1, "arquivo", os.path.basename(caminho))
         listas.append(df)
@@ -509,7 +486,7 @@ def main():
         print("Padrão: img_teste.png na pasta scanner. Não encontrado:", img)
         return
     print("Lendo documento completo (OCR na página inteira)...")
-    df = extrair_todas_matriculas_com_retry(img, usar_easyocr=True, unir_normalizado_e_cru=True)
+    df = extrair_todas_matriculas_com_retry(img, unir_normalizado_e_cru=True)
     if df.empty:
         print("Nenhuma matrícula encontrada.")
         return

@@ -30,10 +30,10 @@ Na pasta `scanner` rode (no PowerShell use `.\build_exe.bat`):
 Depois use:
 
 ```batch
-dist\scanner.exe --images "imagens" --data 25/02/2026 --id-treinamento T01
+dist\scanner\scanner.exe --images "imagens" --data 25/02/2026 --id-treinamento T01
 ```
 
-Ou copie `dist\scanner.exe` para a pasta da planilha e use o caminho dessa pasta em `--excel` e `--images`.
+Ou copie a pasta `dist\scanner` inteira para a pasta da planilha e use `scanner\scanner.exe`.
 
 ### 3. Pelo Excel (botão VBA)
 
@@ -100,7 +100,7 @@ Gera um CSV com **2 colunas**: **Nome_Treinamento**, **Matrícula**. **O resto v
 
 ## Onde colocar os arquivos (planilha controle treinamento profissional)
 
-- **scanner.exe** — mesma pasta da planilha (pode ser *controle treinamento profissional.xlsx* ou qualquer nome).  
+- **pasta scanner** — mesma pasta da planilha, contendo `scanner.exe` e suas dependências.
 - **Planilha** — FUNCIONÁRIOS, TREINAMENTOS, PRESENÇA, MATRIZ_CONTROLE, ListaScanner, etc. (crie com `criar_estrutura_profissional` ou use a sua).  
 - **imagens** — pasta na mesma pasta da planilha, com as fotos da lista de presença (.png, .jpg).  
 - O exe gera o CSV (ex: **presenca_FO0603060006_25-02-2026.csv**) na mesma pasta; importe na aba **ListaScanner**.  
@@ -118,7 +118,7 @@ Sub ImportarScanner()
     Dim idTreino As String
     Dim cmd As String
     
-    caminhoExe = ThisWorkbook.Path & "\scanner.exe"
+    caminhoExe = ThisWorkbook.Path & "\scanner\scanner.exe"
     
     If Dir(caminhoExe) = "" Then
         MsgBox "scanner.exe não encontrado!", vbCritical
@@ -145,7 +145,7 @@ End Sub
 ```
 
 **Para funcionar:**
-- **scanner.exe** na mesma pasta da planilha.
+- **scanner\scanner.exe** na pasta da planilha.
 - Pasta **imagens** na mesma pasta, com as fotos da lista de presença (.png, .jpg).
 - Ajuste `idTreino` no VBA (ou use `idTreino = Range("B1").Value` para ler de uma célula).
 - Depois de rodar, importe o CSV (presenca_ID_data.csv) na aba **ListaScanner**.
@@ -165,7 +165,7 @@ Sub ExecutarScanner()
     idTreino = "T01"   ' ou: Range("B2").Value
     
     excelPath = ThisWorkbook.FullName
-    exePath = ThisWorkbook.Path & "\scanner.exe"
+    exePath = ThisWorkbook.Path & "\scanner\scanner.exe"
     imagesPath = ThisWorkbook.Path & "\imagens"
     
     If Dir(exePath) = "" Then
@@ -207,7 +207,7 @@ Na pasta `scanner` (no PowerShell use `.\` antes do nome):
 .\build_exe.bat
 ```
 
-O executável ficará em `dist\scanner.exe`. Copie para a pasta da planilha junto com a pasta `imagens`.
+O executável ficará em `dist\scanner\scanner.exe`. Copie a pasta `dist\scanner` inteira para junto da planilha; não copie somente o EXE. O modo pasta reduz falsos positivos de antivírus em comparação com `--onefile`.
 
 ## Criar a planilha com as 4 abas (template)
 

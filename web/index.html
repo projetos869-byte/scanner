@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scanner de Treinamentos</title>
+  <style>
+    :root { color-scheme: light; --blue:#155eef; --dark:#172b4d; --muted:#5e6c84; --line:#dfe1e6; --bg:#f4f7fb; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:Inter,Segoe UI,Arial,sans-serif; color:var(--dark); background:var(--bg); }
+    main { width:min(920px,calc(100% - 32px)); margin:36px auto; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:28px; box-shadow:0 8px 30px rgba(23,43,77,.08); }
+    h1 { margin:0 0 8px; font-size:clamp(24px,4vw,36px); }
+    .lead { margin:0 0 26px; color:var(--muted); line-height:1.5; }
+    .drop { display:block; border:2px dashed #9bb7ef; border-radius:14px; padding:30px 20px; text-align:center; background:#f7faff; cursor:pointer; }
+    .drop:hover { border-color:var(--blue); background:#f0f5ff; }
+    input[type=file] { position:absolute; width:1px; height:1px; opacity:0; }
+    .folder-title { display:block; font-weight:700; font-size:18px; }
+    .folder-help { display:block; margin-top:7px; color:var(--muted); font-size:14px; }
+    .selected { min-height:24px; margin:12px 0 18px; color:var(--muted); }
+    details { margin:0 0 18px; }
+    details > div { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+    label.field { font-size:13px; color:var(--muted); }
+    input[type=text], input[type=date], textarea { width:100%; margin-top:6px; border:1px solid var(--line); border-radius:9px; padding:11px; font:inherit; color:var(--dark); }
+    button { border:0; border-radius:9px; padding:12px 18px; font:600 15px inherit; cursor:pointer; }
+    button.primary { width:100%; color:#fff; background:var(--blue); }
+    button.primary:disabled { opacity:.55; cursor:not-allowed; }
+    button.secondary { color:var(--blue); background:#eaf1ff; }
+    button.ghost { color:var(--dark); background:#eef1f5; }
+    #status { min-height:24px; margin-top:16px; font-weight:600; }
+    #status.error { color:#b42318; }
+    #status.ok { color:#067647; }
+    #resultado { display:none; margin-top:26px; border-top:1px solid var(--line); padding-top:24px; }
+    .result-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+    .result-head h2 { margin:0; font-size:21px; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    textarea { min-height:190px; resize:vertical; font-family:Consolas,monospace; font-size:16px; line-height:1.55; background:#fbfcfe; }
+    table { width:100%; border-collapse:collapse; margin-top:18px; }
+    th,td { padding:10px 8px; text-align:left; border-bottom:1px solid var(--line); }
+    th { font-size:13px; color:var(--muted); }
+    .privacy { margin:20px 0 0; color:var(--muted); font-size:13px; }
+    @media (max-width:620px) { .card{padding:20px}.result-head{align-items:flex-start;flex-direction:column}details>div{grid-template-columns:1fr} }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="card">
+      <h1>Scanner de Treinamentos</h1>
+      <p class="lead">Escolha a pasta com as fotos das listas. O sistema retorna somente as matrículas das linhas com o campo de assinatura preenchido.</p>
+
+      <label class="drop" for="images">
+        <span class="folder-title">Selecionar pasta de imagens</span>
+        <span class="folder-help">PNG, JPG, JPEG ou BMP · você pode selecionar várias folhas</span>
+      </label>
+      <input id="images" type="file" accept="image/png,image/jpeg,image/bmp" multiple webkitdirectory directory>
+      <div id="selected" class="selected">Nenhuma pasta selecionada.</div>
+
+      <details>
+        <summary>Identificação opcional do treinamento</summary>
+        <div>
+          <label class="field">Nome ou código
+            <input id="training" type="text" value="LISTA" maxlength="100">
+          </label>
+          <label class="field">Data
+            <input id="date" type="date">
+          </label>
+        </div>
+      </details>
+
+      <button id="process" class="primary" disabled>Processar imagens</button>
+      <div id="status" role="status" aria-live="polite"></div>
+
+      <section id="resultado">
+        <div class="result-head">
+          <h2 id="count">Matrículas encontradas</h2>
+          <div class="actions">
+            <button id="copy" class="secondary">Copiar matrículas</button>
+            <button id="download" class="ghost">Baixar CSV</button>
+          </div>
+        </div>
+        <textarea id="matriculas" readonly aria-label="Matrículas encontradas"></textarea>
+        <table>
+          <thead><tr><th>Matrícula</th><th>Nome lido</th></tr></thead>
+          <tbody id="people"></tbody>
+        </table>
+      </section>
+
+      <p class="privacy">As imagens são enviadas apenas para processamento desta solicitação e não são gravadas pelo aplicativo.</p>
+    </section>
+  </main>
+  <script>
+    const input = document.querySelector('#images');
+    const selected = document.querySelector('#selected');
+    const processButton = document.querySelector('#process');
+    const statusBox = document.querySelector('#status');
+    const result = document.querySelector('#resultado');
+    const output = document.querySelector('#matriculas');
+    const people = document.querySelector('#people');
+    const count = document.querySelector('#count');
+    const dateInput = document.querySelector('#date');
+    let lastCsv = '';
+    let lastFilename = 'matriculas.csv';
+
+    dateInput.value = new Date().toISOString().slice(0, 10);
+
+    function imageFiles() {
+      return [...input.files].filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|bmp)$/i.test(file.name));
+    }
+
+    input.addEventListener('change', () => {
+      const files = imageFiles();
+      selected.textContent = files.length ? `${files.length} imagem(ns) selecionada(s).` : 'Nenhuma imagem válida selecionada.';
+      processButton.disabled = files.length === 0;
+      result.style.display = 'none';
+      statusBox.textContent = '';
+    });
+
+    processButton.addEventListener('click', async () => {
+      const files = imageFiles();
+      if (!files.length) return;
+      processButton.disabled = true;
+      processButton.textContent = 'Processando…';
+      statusBox.className = '';
+      statusBox.textContent = `Enviando e processando ${files.length} imagem(ns). Aguarde…`;
+      result.style.display = 'none';
+
+      const form = new FormData();
+      for (const file of files) form.append('images', file, file.webkitRelativePath || file.name);
+      const training = document.querySelector('#training').value.trim() || 'LISTA';
+      form.append('data', dateInput.value || new Date().toISOString().slice(0, 10));
+      form.append('id_treinamento', training);
+      form.append('nome_treinamento', training);
+
+      try {
+        const response = await fetch('/scan', { method: 'POST', body: form, headers: { Accept: 'application/json' } });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Não foi possível processar as imagens.');
+
+        const matriculas = Array.isArray(data.matriculas) ? data.matriculas : [];
+        output.value = matriculas.join('\n');
+        count.textContent = `${matriculas.length} matrícula(s) encontrada(s)`;
+        people.replaceChildren();
+        for (const person of (data.pessoas || [])) {
+          const row = document.createElement('tr');
+          const mat = document.createElement('td');
+          const name = document.createElement('td');
+          mat.textContent = person.matricula || '';
+          name.textContent = person.nome || '—';
+          row.append(mat, name);
+          people.append(row);
+        }
+        lastCsv = data.csv || '';
+        lastFilename = data.nome_arquivo || 'matriculas.csv';
+        result.style.display = 'block';
+        statusBox.className = data.erro && !matriculas.length ? 'error' : 'ok';
+        statusBox.textContent = data.erro && !matriculas.length ? data.erro : 'Processamento concluído.';
+      } catch (error) {
+        statusBox.className = 'error';
+        statusBox.textContent = error.message || 'Erro inesperado ao processar.';
+      } finally {
+        processButton.disabled = false;
+        processButton.textContent = 'Processar imagens';
+      }
+    });
+
+    document.querySelector('#copy').addEventListener('click', async event => {
+      if (!output.value) return;
+      await navigator.clipboard.writeText(output.value);
+      const original = event.currentTarget.textContent;
+      event.currentTarget.textContent = 'Copiado!';
+      setTimeout(() => event.currentTarget.textContent = original, 1400);
+    });
+
+    document.querySelector('#download').addEventListener('click', () => {
+      if (!lastCsv) return;
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([lastCsv], { type: 'text/csv;charset=utf-8' }));
+      link.download = lastFilename;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    });
+  </script>
+</body>
+</html>

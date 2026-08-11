@@ -9,8 +9,8 @@ Documento único com tudo que compõe o scanner, o que cada arquivo faz e os det
 O **scanner** é um programa que:
 
 1. Recebe o caminho da **planilha Excel** (obrigatório) e da **pasta de imagens** (lista de presença).
-2. Faz **OCR** nas imagens (EasyOCR + Tesseract) para extrair **matrículas** (quem assinou) e o **nome do treinamento** (cabeçalho do documento).
-3. Gera um **CSV** com 2 colunas: **Nome_Treinamento** e **Matrícula** (apenas quem estava presente).
+2. Faz OCR com **Tesseract** (sem rede neural) para extrair **matrícula** e **nome**; OpenCV verifica apenas se o campo de assinatura está preenchido.
+3. Gera um **CSV** com 3 colunas: **Nome_Treinamento**, **Matrícula** e **Nome** (apenas linhas com assinatura preenchida; não valida a assinatura).
 4. **Não edita** o Excel; a planilha (ex.: `controle_treinamentos_profissional.xltm` com macro) importa o CSV e trata o resto (PRESENÇA, MATRIZ_CONTROLE, etc.).
 
 **Planilha:** uso com `controle_treinamentos_profissional.xltm` (ou .xlsx). O Excel chama o exe via VBA passando `--excel` e `--images`.
@@ -22,7 +22,7 @@ O **scanner** é um programa que:
 ```
 scanner/
 ├── scanner_cli.py          # Ponto de entrada (main); argumentos; orquestra OCR e CSV
-├── ler_documento_completo.py  # OCR de matrículas e assinaturas (EasyOCR, Tesseract)
+├── ler_documento_completo.py  # OCR de matrículas e nomes com Tesseract
 ├── extrair_cabecalho.py    # Nome do treinamento e data no cabeçalho do documento
 ├── planilha_relacional.py  # gerar_csv_presenca, obter_nome_treinamento; estrutura de abas
 ├── preprocessamento_scan.py   # Normalização de imagem (warp, A4, deskew)
@@ -35,7 +35,7 @@ scanner/
 
 **Pasta de uso (onde o usuário coloca):**
 
-- `scanner.exe` (copiado de `scanner\dist\scanner.exe`)
+- Pasta `scanner` (copiada de `scanner\dist\scanner`, contendo o EXE e suas dependências)
 - `controle_treinamentos_profissional.xltm` (ou .xlsx)
 - Pasta `imagens/` com as fotos da lista de presença (.png, .jpg)
 
@@ -50,10 +50,8 @@ scanner/
 | pandas     | >=2.0.0  | DataFrame; CSV e leitura do Excel |
 | openpyxl   | >=3.1.0  | Ler/escrever Excel (planilha_relacional) |
 | pytesseract | >=0.3.10 | OCR (Tesseract) |
-| easyocr    | >=1.7.0  | OCR (rede neural; PT/EN) |
 | Pillow     | >=10.0.0 | Imagem (suporte a formatos) |
 
-**Indiretas (via easyocr):** PyTorch (torch).  
 **Build:** PyInstaller (e opcionalmente pywin32).
 
 ---
@@ -74,7 +72,7 @@ scanner/
 3. **OCR**
    - Uma imagem: `extrair_matriculas_e_assinaturas(imagem, faixa_x, ratio_assinatura, ...)`.
    - Várias: `extrair_matriculas_e_assinaturas_varias_folhas(lista, ...)`.
-   - Parâmetros fixos: `faixa_x=(0.05, 0.38)`, `ratio_assinatura=(0.50, 0.88)`, `score_threshold_assinatura=0.018`, `min_digitos=4`, `max_digitos=7`, `usar_easyocr=True`, `matriculas_manuscritas=False`.
+   - Parâmetros fixos: `faixa_x=(0.05, 0.38)`, `ratio_assinatura=(0.55, 0.80)`, `score_threshold_assinatura=0.018`, `min_digitos=4`, `max_digitos=7`, `matriculas_manuscritas=False`.
 
 4. **Matrículas presentes**
    - Coluna `matricula` do DataFrame retornado pelo OCR → lista de strings (quem assinou).
@@ -97,15 +95,12 @@ scanner/
 - **Funções principais:**
   - `_obter_lista_imagens(entrada)`: monta lista de caminhos de imagens (pasta, arquivo ou lista).
   - `main()`: parse dos argumentos, chamada ao OCR, geração do CSV (se modo relacional), abertura do Excel.
-- **Suprimir avisos:** `warnings.filterwarnings` para o aviso do PyTorch (pin_memory sem GPU).
 - **Diretório de trabalho:** ao rodar, o script usa a pasta do exe (ou do .py) como `_SCRIPT_DIR` e troca o cwd para ela.
 
 ### 5.2 ler_documento_completo.py
 
-- **Função:** OCR de página inteira; extração de matrículas (e opcionalmente assinaturas) com EasyOCR e Tesseract.
+- **Função:** OCR de página inteira com Tesseract; extração de matrícula e nome, mais verificação do preenchimento da assinatura com OpenCV.
 - **Principais funções:**
-  - `_get_easyocr_reader()`: singleton do EasyOCR (pt, en; gpu=False); avisos suprimidos no carregamento.
-  - `_ocr_pagina_inteira_easyocr(imagem)`: EasyOCR na imagem; retorna lista (center_x, center_y, texto, confiança).
   - `_ocr_pagina_inteira_tesseract(imagem)`: idem com Tesseract (por).
   - `_eh_matricula_valida(txt, min_len, max_len, manuscrito)`: valida e normaliza dígitos (5–7 dígitos; manuscrito: 3–8 e normalização O→0, l→1, etc.).
   - `extrair_todas_matriculas(imagem, faixa_x, ...)`: filtra detecções por faixa horizontal (coluna de matrícula) e valida matrícula.
@@ -120,7 +115,7 @@ scanner/
 - **Função:** extrair do **cabeçalho** do documento (faixa superior) o **nome do treinamento** e a **data**.
 - **Constantes:** `PALAVRAS_TREINAMENTO`, `REGEX_DATA`.
 - **Principais funções:**
-  - `_ocr_topo_imagem(imagem, fracao_topo=0.22)`: OCR na faixa superior (EasyOCR + Tesseract).
+  - `_ocr_topo_imagem(imagem, fracao_topo=0.22)`: OCR Tesseract na faixa superior.
   - `extrair_cabecalho_documento(caminho_ou_imagem, fracao_topo)`: retorna `(nome_treinamento, data_treinamento)`.
 
 ### 5.4 planilha_relacional.py
@@ -189,10 +184,10 @@ CONTROLE DE PARTICIPAÇÃO EM TREINAMENTO;155194
 
 1. Instalar dependências: `pip install -r requirements.txt`
 2. Na pasta `scanner` (PowerShell): `.\build_exe.bat`
-3. O exe é gerado em: `scanner\dist\scanner.exe`
-4. Opções do PyInstaller usadas no build: `--onefile`, `--noconsole`, `--name scanner`, `--distpath dist`; `--hidden-import` para openpyxl, pandas, cv2, numpy, easyocr, pytesseract, ler_documento_completo, extrair_cabecalho, planilha_relacional, preprocessamento_scan, pipeline_foto_torta.
+3. O exe é gerado em: `scanner\dist\scanner\scanner.exe`
+4. O PyInstaller usa `--onedir`, `--noconsole` e `--noupx`. O modo pasta evita a extração automática em diretório temporário feita por `--onefile`, reduzindo falsos positivos de antivírus.
 
-Copie `dist\scanner.exe` para a pasta onde estão a planilha e a pasta `imagens`.
+Copie a pasta `dist\scanner` inteira para a pasta onde estão a planilha e as imagens. Não distribua somente o EXE. Em ambiente corporativo, a solução definitiva é assinar digitalmente o executável com um certificado confiável.
 
 ---
 
@@ -214,9 +209,9 @@ Para instruções detalhadas (botão, pasta imagens, estrutura das abas), ver **
 | Item | Descrição |
 |------|-----------|
 | **Entrada** | Planilha (--excel obrigatório), pasta de imagens (--images), opcionalmente --data e --id-treinamento. |
-| **Processamento** | OCR (EasyOCR + Tesseract) em `ler_documento_completo` + `extrair_cabecalho`; detecção de assinatura em `pipeline_foto_torta`. |
+| **Processamento** | OCR Tesseract em `ler_documento_completo` + `extrair_cabecalho`; detecção de campo preenchido em `pipeline_foto_torta`. |
 | **Saída** | CSV com Nome_Treinamento e Matrícula (só presentes), na pasta do exe. |
 | **Planilha** | Controle treinamento profissional (.xltm/.xlsx); o scanner não edita a planilha. |
-| **Exe** | `.\build_exe.bat` → `dist\scanner.exe`; usar com `--excel` e, para CSV, `--data` e `--id-treinamento`. |
+| **Exe** | `.\build_exe.bat` → `dist\scanner\scanner.exe`; distribuir a pasta inteira. |
 
 Este arquivo (**SCANNER_COMPLETO.md**) é a documentação técnica única do scanner com tudo que é utilizado e os detalhes descritos acima.

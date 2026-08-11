@@ -252,6 +252,7 @@ def gerar_csv_presenca(
     id_treinamento: str,
     matriculas_presentes: List[str],
     nome_treinamento: Optional[str] = None,
+    nomes_presentes: Optional[List[str]] = None,
     pasta_saida: Optional[str] = None,
 ) -> str:
     """
@@ -263,9 +264,12 @@ def gerar_csv_presenca(
     pasta = pasta_saida or _SCRIPT_DIR
     caminho = os.path.join(pasta, nome_arq)
     rotulo = (nome_treinamento or id_treinamento).strip()
+    nomes = nomes_presentes or [""] * len(matriculas_presentes)
+    nomes = (nomes + [""] * len(matriculas_presentes))[:len(matriculas_presentes)]
     df = pd.DataFrame({
         "Nome_Treinamento": [rotulo] * len(matriculas_presentes),
         "Matrícula": [str(m).strip() for m in matriculas_presentes],
+        "Nome": nomes,
     })
     df.to_csv(caminho, sep=";", index=False, encoding="utf-8-sig")
     return caminho

@@ -8,9 +8,4 @@ opencv-python>=4.8.0
 numpy>=1.24.0
 pandas>=2.0.0
 pytesseract>=0.3.10
-easyocr>=1.7.0
 Pillow>=10.0.0
-
-# easyocr usa PyTorch (CPU no Render)
-# torch é instalado automaticamente pelo easyocr; se quiser fixar:
-# torch>=2.0.0 --index-url https://download.pytorch.org/whl/cpu

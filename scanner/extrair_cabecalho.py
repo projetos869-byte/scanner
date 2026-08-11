@@ -21,19 +21,6 @@ PALAVRAS_TREINAMENTO = ("TREINAMENTO", "CAPACITAÇÃO", "CAPACITACAO", "NR", "SE
 REGEX_DATA = re.compile(r"\b(\d{1,2})[./](\d{1,2})[./](\d{2,4})\b")
 
 
-_EASYOCR_READER = None
-
-def _get_reader():
-    global _EASYOCR_READER
-    if _EASYOCR_READER is None:
-        try:
-            import easyocr
-            _EASYOCR_READER = easyocr.Reader(["pt", "en"], gpu=False, verbose=False)
-        except Exception:
-            pass
-    return _EASYOCR_READER
-
-
 def _ocr_topo_imagem(imagem: np.ndarray, fracao_topo: float = 0.22) -> List[Tuple[float, float, float, float, str, float]]:
     """
     OCR apenas na faixa superior da imagem.
@@ -45,22 +32,6 @@ def _ocr_topo_imagem(imagem: np.ndarray, fracao_topo: float = 0.22) -> List[Tupl
     if topo.size == 0:
         return []
     resultados = []
-    reader = _get_reader()
-    if reader is not None:
-        try:
-            if len(topo.shape) == 2:
-                topo_rgb = cv2.cvtColor(topo, cv2.COLOR_GRAY2RGB)
-            else:
-                topo_rgb = cv2.cvtColor(topo, cv2.COLOR_BGR2RGB)
-            det = reader.readtext(topo_rgb)
-            for bbox, texto, conf in det:
-                if not texto or not bbox:
-                    continue
-                xs = [p[0] for p in bbox]
-                ys = [p[1] for p in bbox]
-                resultados.append((min(xs), min(ys), max(xs), max(ys), texto.strip(), float(conf)))
-        except Exception:
-            pass
     try:
         import pytesseract
         if len(topo.shape) == 3:

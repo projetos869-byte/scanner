@@ -227,7 +227,7 @@ def extrair_matricula_e_presenca(
     img_bgr: np.ndarray,
     target_w: int = 2200,
     ratio_matricula: Tuple[float, float] = (0.10, 0.25),
-    ratio_assinatura: Tuple[float, float] = (0.55, 0.85),
+    ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
     score_threshold_assinatura: float = 0.003,
     skip_linhas_cabecalho: int = 2,
     min_altura_linha: int = 25,

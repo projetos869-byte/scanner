@@ -22,6 +22,7 @@ RUN sed -i 's/opencv-python/opencv-python-headless/' requirements.txt \
 # Código da API e do scanner
 COPY main.py .
 COPY scanner/ ./scanner/
+COPY web/ ./web/
 
 # Porta (Render injeta PORT em runtime; padrão 8000)
 ENV PORT=8000

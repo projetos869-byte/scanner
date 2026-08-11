@@ -36,20 +36,18 @@ O Render usa o `Dockerfile` na raiz do repositório. Não é necessário definir
 
 ### Observações
 
-- **Tesseract:** No Render (Linux), o Tesseract pode não estar instalado no sistema. Se der erro de `pytesseract`, você pode:
-  - Instalar no Build: adicionar no Build Command algo como `apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-por` (se o Render permitir) ou
-  - Usar só EasyOCR (no código dá para tornar o Tesseract opcional).
-- **Memória:** O EasyOCR/PyTorch consome bastante RAM. No plano free o serviço pode dormir após inatividade; a primeira requisição pode demorar (cold start).
+- **Tesseract:** prefira o deploy Docker deste projeto, pois a imagem já instala o OCR e o idioma português.
+- **Plano gratuito:** o serviço pode dormir após inatividade; a primeira abertura pode demorar alguns segundos.
 
-## 3. URL do serviço
+## 3. Abrir a página
 
-Após o deploy, a URL ficará no formato:
+Após o deploy, abra a URL do serviço no navegador:
 
 ```
 https://scanner-api.onrender.com
 ```
 
-Endpoint do scan:
+A página permite selecionar uma pasta de imagens, processar e copiar as matrículas. O endpoint usado internamente continua disponível:
 
 ```
 POST https://scanner-api.onrender.com/scan
@@ -64,10 +62,10 @@ $boundary = [System.Guid]::NewGuid().ToString()
 # Ou use Postman/Insomnia para testar.
 ```
 
-Para testar só se a API está no ar:
+Para testar somente a saúde da aplicação:
 
 ```powershell
-Invoke-RestMethod -Uri "https://scanner-api.onrender.com/" -Method Get
+Invoke-RestMethod -Uri "https://scanner-api.onrender.com/health" -Method Get
 ```
 
-Resposta esperada: `{"api":"scanner-ocr","endpoint":"POST /scan"}`.
+Resposta esperada: `{"status":"ok","api":"scanner-ocr"}`.

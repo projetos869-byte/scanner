@@ -1,0 +1,31 @@
+# Metadados nativos exibidos nas propriedades do arquivo no Windows.
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 1, 0, 0),
+    prodvers=(1, 1, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '041604B0',
+        [
+          StringStruct('CompanyName', 'ScannerWeb'),
+          StringStruct('FileDescription', 'Scanner de listas de treinamento'),
+          StringStruct('FileVersion', '1.1.0.0'),
+          StringStruct('InternalName', 'scanner'),
+          StringStruct('LegalCopyright', 'Uso interno'),
+          StringStruct('OriginalFilename', 'scanner.exe'),
+          StringStruct('ProductName', 'ScannerWeb Treinamentos'),
+          StringStruct('ProductVersion', '1.1.0.0')
+        ]
+      )
+    ]),
+    VarFileInfo([VarStruct('Translation', [1046, 1200])])
+  ]
+)

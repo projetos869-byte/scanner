@@ -7,7 +7,6 @@ Compatível com a aba ListaScanner da planilha Excel.
 import os
 import sys
 import io
-import warnings
 
 # Pasta do scanner (mesmo nível que main.py)
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,16 +15,12 @@ if _SCANNER_DIR not in sys.path:
     sys.path.insert(0, _SCANNER_DIR)
 os.chdir(_APP_DIR)
 
-# Suprimir avisos do PyTorch/EasyOCR
-warnings.filterwarnings("ignore", message=".*pin_memory.*", category=UserWarning)
-warnings.filterwarnings("ignore", category=UserWarning, module="torch")
-
 from typing import Annotated
 
 import numpy as np
 import cv2
 from fastapi import FastAPI, UploadFile, File, Form, Request
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Scanner OCR API", version="1.0")
@@ -77,21 +72,38 @@ def _bytes_to_image(content: bytes) -> np.ndarray | None:
     return img
 
 
-def _gerar_csv_string(nome_treinamento: str, matriculas: list[str]) -> str:
-    """Gera CSV no formato da ListaScanner: Nome_Treinamento; Matrícula (UTF-8 com BOM)."""
+def _gerar_csv_string(nome_treinamento: str, pessoas: list[tuple[str, str]]) -> str:
+    """Gera CSV para o Excel com treinamento, nome e matrícula."""
+    import csv
     buf = io.StringIO()
-    buf.write("Nome_Treinamento;Matrícula\n")
-    for m in matriculas:
-        buf.write(f"{nome_treinamento};{m}\n")
+    writer = csv.writer(buf, delimiter=";", lineterminator="\n")
+    # Mantém Matrícula na coluna B para compatibilidade com a planilha existente.
+    writer.writerow(["Nome_Treinamento", "Matrícula", "Nome"])
+    for nome, matricula in pessoas:
+        writer.writerow([nome_treinamento, matricula, nome])
     return "\ufeff" + buf.getvalue()  # BOM para Excel abrir em UTF-8
 
 
 @app.get("/")
 def root():
-    return {"api": "scanner-ocr", "endpoint": "POST /scan"}
+    """Página web para selecionar uma pasta, processar e copiar as matrículas."""
+    return FileResponse(os.path.join(_APP_DIR, "web", "index.html"))
 
 
-def _resposta_csv_ou_json(request: Request, retorno: str | None, csv_body: str, erro: str | None, nome_arquivo: str, quantidade: int = 0):
+@app.get("/health")
+def health():
+    return {"status": "ok", "api": "scanner-ocr"}
+
+
+def _resposta_csv_ou_json(
+    request: Request,
+    retorno: str | None,
+    csv_body: str,
+    erro: str | None,
+    nome_arquivo: str,
+    quantidade: int = 0,
+    pessoas: list[tuple[str, str]] | None = None,
+):
     """Se o cliente pediu CSV (retorno=csv ou Accept: text/csv), retorna Response CSV; senão JSON."""
     accept = (request.headers.get("accept") or "").lower()
     quer_csv = (retorno or "").strip().lower() == "csv" or "text/csv" in accept
@@ -102,7 +114,14 @@ def _resposta_csv_ou_json(request: Request, retorno: str | None, csv_body: str, 
             media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": f'inline; filename="{nome_arquivo}"'},
         )
-    out = {"csv": csv_body, "nome_arquivo": nome_arquivo, "quantidade": quantidade}
+    pessoas = pessoas or []
+    out = {
+        "csv": csv_body,
+        "nome_arquivo": nome_arquivo,
+        "quantidade": quantidade,
+        "matriculas": [matricula for _, matricula in pessoas],
+        "pessoas": [{"nome": nome, "matricula": matricula} for nome, matricula in pessoas],
+    }
     if erro:
         out["erro"] = erro
     return out
@@ -111,11 +130,11 @@ def _resposta_csv_ou_json(request: Request, retorno: str | None, csv_body: str, 
 @app.post("/scan")
 def scan(
     request: Request,
+    images: Annotated[list[UploadFile], File(description="Arquivo(s) de imagem — use o botão Choose File")],
     data: str = Form(...),
     id_treinamento: str = Form(...),
     nome_treinamento: str | None = Form(None),
     retorno: str | None = Form(None),
-    images: Annotated[list[UploadFile], File(description="Arquivo(s) de imagem — use o botão Choose File")],
 ):
     """
     Recebe **arquivos de imagem** da lista de presença (multipart/form-data), data e id do treinamento.
@@ -124,7 +143,7 @@ def scan(
     """
     data_arq = data.replace("/", "-").replace(".", "-").strip()
     nome_arquivo = f"presenca_{id_treinamento}_{data_arq}.csv"
-    csv_vazio = "\ufeffNome_Treinamento;Matrícula\n"
+    csv_vazio = "\ufeffNome_Treinamento;Matrícula;Nome\n"
 
     from ler_documento_completo import extrair_matriculas_e_assinaturas
 
@@ -146,7 +165,7 @@ def scan(
 
     # OCR com a mesma lógica do scanner_cli
     faixa_x = (0.05, 0.38)
-    ratio_assinatura = (0.50, 0.88)
+    ratio_assinatura = (0.55, 0.80)
     score_threshold = 0.018
     min_digitos, max_digitos = 4, 7
 
@@ -158,7 +177,6 @@ def scan(
             score_threshold_assinatura=score_threshold,
             min_digitos=min_digitos,
             max_digitos=max_digitos,
-            usar_easyocr=True,
             matriculas_manuscritas=False,
         )
     else:
@@ -177,7 +195,6 @@ def scan(
                 score_threshold_assinatura=score_threshold,
                 min_digitos=min_digitos,
                 max_digitos=max_digitos,
-                usar_easyocr=True,
                 matriculas_manuscritas=False,
             )
             if not df_one.empty:
@@ -195,10 +212,21 @@ def scan(
         df_presentes = df[df["assinou"] == True]
     else:
         df_presentes = df
-    matriculas_presentes = df_presentes["matricula"].astype(str).str.strip().tolist()
+    pessoas_presentes = [
+        (str(row.get("nome", "")).strip(), str(row["matricula"]).strip())
+        for _, row in df_presentes.iterrows()
+    ]
 
     # Nome do treinamento: vem do form ou id_treinamento (sem OCR de cabeçalho — reduz tamanho e dependências)
     nome_final = (nome_treinamento or id_treinamento).strip()
 
-    csv_str = _gerar_csv_string(nome_final, matriculas_presentes)
-    return _resposta_csv_ou_json(request, retorno, csv_str, None, nome_arquivo, len(matriculas_presentes))
+    csv_str = _gerar_csv_string(nome_final, pessoas_presentes)
+    return _resposta_csv_ou_json(
+        request,
+        retorno,
+        csv_str,
+        None,
+        nome_arquivo,
+        len(pessoas_presentes),
+        pessoas_presentes,
+    )
