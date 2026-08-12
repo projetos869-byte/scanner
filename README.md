@@ -1,6 +1,6 @@
 # scannerWeb
 
-Aplicação web para listas de presença, pronta para Docker/Render. Abra o link, selecione a pasta de imagens e copie as matrículas das linhas com o campo de assinatura preenchido. Usa Tesseract e OpenCV, sem rede neural e sem validar a assinatura.
+Aplicação web para listas de presença, pronta para Docker/Render. Abra o link, selecione a pasta de imagens e copie as matrículas das linhas com o campo de assinatura preenchido. Usa uma única leitura Tesseract restrita à coluna de matrícula e OpenCV para o campo de assinatura, sem rede neural e sem validar a assinatura.
 
 ## Uso rápido
 

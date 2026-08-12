@@ -35,9 +35,6 @@
     .result-head h2 { margin:0; font-size:21px; }
     .actions { display:flex; gap:8px; flex-wrap:wrap; }
     textarea { min-height:190px; resize:vertical; font-family:Consolas,monospace; font-size:16px; line-height:1.55; background:#fbfcfe; }
-    table { width:100%; border-collapse:collapse; margin-top:18px; }
-    th,td { padding:10px 8px; text-align:left; border-bottom:1px solid var(--line); }
-    th { font-size:13px; color:var(--muted); }
     .privacy { margin:20px 0 0; color:var(--muted); font-size:13px; }
     @media (max-width:620px) { .card{padding:20px}.result-head{align-items:flex-start;flex-direction:column}details>div{grid-template-columns:1fr} }
   </style>
@@ -79,10 +76,6 @@
           </div>
         </div>
         <textarea id="matriculas" readonly aria-label="Matrículas encontradas"></textarea>
-        <table>
-          <thead><tr><th>Matrícula</th><th>Nome lido</th></tr></thead>
-          <tbody id="people"></tbody>
-        </table>
       </section>
 
       <p class="privacy">As imagens são enviadas apenas para processamento desta solicitação e não são gravadas pelo aplicativo.</p>
@@ -95,7 +88,6 @@
     const statusBox = document.querySelector('#status');
     const result = document.querySelector('#resultado');
     const output = document.querySelector('#matriculas');
-    const people = document.querySelector('#people');
     const count = document.querySelector('#count');
     const dateInput = document.querySelector('#date');
     let lastCsv = '';
@@ -139,16 +131,6 @@
         const matriculas = Array.isArray(data.matriculas) ? data.matriculas : [];
         output.value = matriculas.join('\n');
         count.textContent = `${matriculas.length} matrícula(s) encontrada(s)`;
-        people.replaceChildren();
-        for (const person of (data.pessoas || [])) {
-          const row = document.createElement('tr');
-          const mat = document.createElement('td');
-          const name = document.createElement('td');
-          mat.textContent = person.matricula || '';
-          name.textContent = person.nome || '—';
-          row.append(mat, name);
-          people.append(row);
-        }
         lastCsv = data.csv || '';
         lastFilename = data.nome_arquivo || 'matriculas.csv';
         result.style.display = 'block';

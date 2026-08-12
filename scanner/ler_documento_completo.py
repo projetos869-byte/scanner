@@ -82,7 +82,10 @@ def _preprocessar_para_manuscrito(imagem: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
 
-def _ocr_pagina_inteira_tesseract(imagem: np.ndarray) -> List[Tuple[float, float, str, float]]:
+def _ocr_pagina_inteira_tesseract(
+    imagem: np.ndarray,
+    config: str = "--oem 1 --psm 6",
+) -> List[Tuple[float, float, str, float]]:
     """
     Tesseract image_to_data na página inteira. Retorna (center_x, center_y, texto, conf/100).
     """
@@ -95,10 +98,14 @@ def _ocr_pagina_inteira_tesseract(imagem: np.ndarray) -> List[Tuple[float, float
     else:
         gray = imagem
     try:
-        d = pytesseract.image_to_data(gray, lang="por", output_type=pytesseract.Output.DICT)
+        d = pytesseract.image_to_data(
+            gray, lang="por", config=config, output_type=pytesseract.Output.DICT
+        )
     except Exception:
         try:
-            d = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
+            d = pytesseract.image_to_data(
+                gray, config=config, output_type=pytesseract.Output.DICT
+            )
         except Exception:
             return []
     n = len(d.get("text", []))
@@ -153,8 +160,17 @@ def extrair_todas_matriculas(
     h, w = img.shape[:2]
     x_min = int(w * faixa_x[0])
     x_max = int(w * faixa_x[1])
-    # Somente OCR clássico (Tesseract), sem rede neural.
-    deteccoes = _ocr_pagina_inteira_tesseract(img)
+    # Lê somente a coluna de matrícula. Além de ser mais rápido, evita que textos
+    # das demais colunas confundam o OCR. O eixo Y continua igual ao da folha.
+    coluna_matricula = img[:, x_min:x_max]
+    deteccoes_coluna = _ocr_pagina_inteira_tesseract(
+        coluna_matricula,
+        config="--oem 1 --psm 6 -c tessedit_char_whitelist=0123456789",
+    )
+    deteccoes = [
+        (cx + x_min, cy, texto, conf)
+        for cx, cy, texto, conf in deteccoes_coluna
+    ]
     if not deteccoes:
         return pd.DataFrame()
     mn, mx = (3, 8) if matriculas_manuscritas else (min_digitos, max_digitos)
@@ -313,30 +329,9 @@ def extrair_todas_matriculas_com_retry(
     return chosen
 
 
-def _ocr_nome_celula(cell: np.ndarray) -> str:
-    """Le o nome impresso usando Tesseract, sem rede neural."""
-    try:
-        import pytesseract
-    except ImportError:
-        return ""
-    if cell is None or cell.size == 0:
-        return ""
-    gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY) if len(cell.shape) == 3 else cell
-    gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-    try:
-        texto = pytesseract.image_to_string(gray, lang="por", config=r"--oem 1 --psm 7")
-    except Exception:
-        try:
-            texto = pytesseract.image_to_string(gray, config=r"--oem 1 --psm 7")
-        except Exception:
-            return ""
-    return re.sub(r"\s+", " ", texto).strip(" |_-\t\r\n")
-
-
 def _adicionar_assinaturas_por_linha(
     img: np.ndarray,
     df: pd.DataFrame,
-    ratio_nome: Tuple[float, float] = (0.19, 0.55),
     ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
     score_threshold_assinatura: float = 0.018,
 ) -> pd.DataFrame:
@@ -361,13 +356,10 @@ def _adicionar_assinaturas_por_linha(
     h, w = img.shape[:2]
     x1 = int(w * ratio_assinatura[0])
     x2 = int(w * ratio_assinatura[1])
-    nome_x1 = int(w * ratio_nome[0])
-    nome_x2 = int(w * ratio_nome[1])
     ys = df["y_centro"].values
     n = len(ys)
     assinou_list = []
     score_list = []
-    nomes = []
     for i in range(n):
         yc = int(ys[i])
         if n == 1:
@@ -382,9 +374,6 @@ def _adicionar_assinaturas_por_linha(
         y1 = max(0, yc - dy)
         y2 = min(h, yc + dy)
         cell = img[y1:y2, x1:x2]
-        margem_y = max(2, (y2 - y1) // 10)
-        cell_nome = img[y1 + margem_y:max(y1 + margem_y + 1, y2 - margem_y), nome_x1:nome_x2]
-        nomes.append(_ocr_nome_celula(cell_nome))
         if cell.size == 0:
             assinou_list.append(False)
             score_list.append(0.0)
@@ -393,7 +382,9 @@ def _adicionar_assinaturas_por_linha(
         assinou_list.append(assinou)
         score_list.append(round(score, 6))
     out = df.copy()
-    out["nome"] = nomes
+    # A página web precisa somente das matrículas. Não executar um OCR adicional
+    # para cada nome reduz dezenas de processos Tesseract por folha.
+    out["nome"] = ""
     out["assinou"] = assinou_list
     out["score_assinatura"] = score_list
     return out
@@ -403,7 +394,6 @@ def extrair_matriculas_e_assinaturas(
     caminho_ou_imagem: Union[str, np.ndarray],
     faixa_x: Tuple[float, float] = (0.05, 0.38),
     ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
-    ratio_nome: Tuple[float, float] = (0.19, 0.55),
     score_threshold_assinatura: float = 0.018,
     min_digitos: int = 4,
     max_digitos: int = 7,
@@ -419,7 +409,9 @@ def extrair_matriculas_e_assinaturas(
         faixa_x=faixa_x,
         min_digitos=min_digitos,
         max_digitos=max_digitos,
-        unir_normalizado_e_cru=True,
+        # Uma única leitura normalizada. O modo antigo fazia duas leituras
+        # completas por folha e escolhia o melhor resultado.
+        unir_normalizado_e_cru=False,
         retornar_imagem_usada=True,
         matriculas_manuscritas=matriculas_manuscritas,
     )
@@ -428,7 +420,6 @@ def extrair_matriculas_e_assinaturas(
     return _adicionar_assinaturas_por_linha(
         img_used,
         df,
-        ratio_nome=ratio_nome,
         ratio_assinatura=ratio_assinatura,
         score_threshold_assinatura=score_threshold_assinatura,
     )
@@ -438,7 +429,6 @@ def extrair_matriculas_e_assinaturas_varias_folhas(
     lista_caminhos: List[str],
     faixa_x: Tuple[float, float] = (0.05, 0.38),
     ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
-    ratio_nome: Tuple[float, float] = (0.19, 0.55),
     score_threshold_assinatura: float = 0.018,
     min_digitos: int = 4,
     max_digitos: int = 7,
@@ -459,7 +449,6 @@ def extrair_matriculas_e_assinaturas_varias_folhas(
             caminho,
             faixa_x=faixa_x,
             ratio_assinatura=ratio_assinatura,
-            ratio_nome=ratio_nome,
             score_threshold_assinatura=score_threshold_assinatura,
             min_digitos=min_digitos,
             max_digitos=max_digitos,
