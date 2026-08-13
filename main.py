@@ -1,7 +1,6 @@
 """
 API OCR do Scanner — para deploy no Render.
-Recebe imagens + data + id_treinamento via POST /scan e devolve CSV (Nome_Treinamento; Matrícula).
-Compatível com a aba ListaScanner da planilha Excel.
+Recebe imagens via POST /scan e devolve somente as matrículas das linhas assinadas.
 """
 
 import os
@@ -72,15 +71,14 @@ def _bytes_to_image(content: bytes) -> np.ndarray | None:
     return img
 
 
-def _gerar_csv_string(nome_treinamento: str, pessoas: list[tuple[str, str]]) -> str:
-    """Gera CSV para o Excel com treinamento, nome e matrícula."""
+def _gerar_csv_string(matriculas: list[str]) -> str:
+    """Gera uma única coluna de matrículas para colar ou abrir no Excel."""
     import csv
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";", lineterminator="\n")
-    # Mantém Matrícula na coluna B para compatibilidade com a planilha existente.
-    writer.writerow(["Nome_Treinamento", "Matrícula", "Nome"])
-    for nome, matricula in pessoas:
-        writer.writerow([nome_treinamento, matricula, nome])
+    writer.writerow(["Matrícula"])
+    for matricula in matriculas:
+        writer.writerow([matricula])
     return "\ufeff" + buf.getvalue()  # BOM para Excel abrir em UTF-8
 
 
@@ -102,7 +100,7 @@ def _resposta_csv_ou_json(
     erro: str | None,
     nome_arquivo: str,
     quantidade: int = 0,
-    pessoas: list[tuple[str, str]] | None = None,
+    matriculas: list[str] | None = None,
 ):
     """Se o cliente pediu CSV (retorno=csv ou Accept: text/csv), retorna Response CSV; senão JSON."""
     accept = (request.headers.get("accept") or "").lower()
@@ -114,13 +112,12 @@ def _resposta_csv_ou_json(
             media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": f'inline; filename="{nome_arquivo}"'},
         )
-    pessoas = pessoas or []
+    matriculas = matriculas or []
     out = {
         "csv": csv_body,
         "nome_arquivo": nome_arquivo,
         "quantidade": quantidade,
-        "matriculas": [matricula for _, matricula in pessoas],
-        "pessoas": [{"nome": nome, "matricula": matricula} for nome, matricula in pessoas],
+        "matriculas": matriculas,
     }
     if erro:
         out["erro"] = erro
@@ -131,9 +128,8 @@ def _resposta_csv_ou_json(
 def scan(
     request: Request,
     images: Annotated[list[UploadFile], File(description="Arquivo(s) de imagem — use o botão Choose File")],
-    data: str = Form(...),
-    id_treinamento: str = Form(...),
-    nome_treinamento: str | None = Form(None),
+    data: str = Form("lista"),
+    id_treinamento: str = Form("matriculas"),
     retorno: str | None = Form(None),
 ):
     """
@@ -143,7 +139,7 @@ def scan(
     """
     data_arq = data.replace("/", "-").replace(".", "-").strip()
     nome_arquivo = f"presenca_{id_treinamento}_{data_arq}.csv"
-    csv_vazio = "\ufeffNome_Treinamento;Matrícula;Nome\n"
+    csv_vazio = "\ufeffMatrícula\n"
 
     from ler_documento_completo import extrair_matriculas_e_assinaturas
 
@@ -204,7 +200,7 @@ def scan(
         df = pd.concat(listas_df, ignore_index=True) if listas_df else pd.DataFrame()
 
     if df.empty:
-        csv_str = _gerar_csv_string(nome_treinamento or id_treinamento, [])
+        csv_str = _gerar_csv_string([])
         return _resposta_csv_ou_json(request, retorno, csv_str, "Nenhuma matrícula encontrada no OCR", nome_arquivo)
 
     # Só considera presente quem tem assinatura detectada (coluna assinou); se não existir, usa todas as matrículas
@@ -212,21 +208,14 @@ def scan(
         df_presentes = df[df["assinou"] == True]
     else:
         df_presentes = df
-    pessoas_presentes = [
-        (str(row.get("nome", "")).strip(), str(row["matricula"]).strip())
-        for _, row in df_presentes.iterrows()
-    ]
-
-    # Nome do treinamento: vem do form ou id_treinamento (sem OCR de cabeçalho — reduz tamanho e dependências)
-    nome_final = (nome_treinamento or id_treinamento).strip()
-
-    csv_str = _gerar_csv_string(nome_final, pessoas_presentes)
+    matriculas_presentes = df_presentes["matricula"].astype(str).str.strip().tolist()
+    csv_str = _gerar_csv_string(matriculas_presentes)
     return _resposta_csv_ou_json(
         request,
         retorno,
         csv_str,
         None,
         nome_arquivo,
-        len(pessoas_presentes),
-        pessoas_presentes,
+        len(matriculas_presentes),
+        matriculas_presentes,
     )

@@ -341,7 +341,6 @@ def _adicionar_assinaturas_por_linha(
     """
     if img is None or img.size == 0 or df.empty or "y_centro" not in df.columns:
         df = df.copy()
-        df["nome"] = ""
         df["assinou"] = False
         df["score_assinatura"] = 0.0
         return df
@@ -349,7 +348,6 @@ def _adicionar_assinaturas_por_linha(
         from pipeline_foto_torta import assinatura_presente
     except ImportError:
         df = df.copy()
-        df["nome"] = ""
         df["assinou"] = False
         df["score_assinatura"] = 0.0
         return df
@@ -382,9 +380,6 @@ def _adicionar_assinaturas_por_linha(
         assinou_list.append(assinou)
         score_list.append(round(score, 6))
     out = df.copy()
-    # A página web precisa somente das matrículas. Não executar um OCR adicional
-    # para cada nome reduz dezenas de processos Tesseract por folha.
-    out["nome"] = ""
     out["assinou"] = assinou_list
     out["score_assinatura"] = score_list
     return out
@@ -455,7 +450,7 @@ def extrair_matriculas_e_assinaturas_varias_folhas(
             matriculas_manuscritas=matriculas_manuscritas,
         )
         if df.empty:
-            df = pd.DataFrame(columns=["linha", "matricula", "nome", "confianca", "x_centro", "y_centro", "assinou", "score_assinatura"])
+            df = pd.DataFrame(columns=["linha", "matricula", "confianca", "x_centro", "y_centro", "assinou", "score_assinatura"])
         df.insert(0, "folha", idx)
         df.insert(1, "arquivo", os.path.basename(caminho))
         listas.append(df)

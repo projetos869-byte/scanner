@@ -18,10 +18,7 @@
     .folder-title { display:block; font-weight:700; font-size:18px; }
     .folder-help { display:block; margin-top:7px; color:var(--muted); font-size:14px; }
     .selected { min-height:24px; margin:12px 0 18px; color:var(--muted); }
-    details { margin:0 0 18px; }
-    details > div { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
-    label.field { font-size:13px; color:var(--muted); }
-    input[type=text], input[type=date], textarea { width:100%; margin-top:6px; border:1px solid var(--line); border-radius:9px; padding:11px; font:inherit; color:var(--dark); }
+    textarea { width:100%; margin-top:6px; border:1px solid var(--line); border-radius:9px; padding:11px; font:inherit; color:var(--dark); }
     button { border:0; border-radius:9px; padding:12px 18px; font:600 15px inherit; cursor:pointer; }
     button.primary { width:100%; color:#fff; background:var(--blue); }
     button.primary:disabled { opacity:.55; cursor:not-allowed; }
@@ -52,18 +49,6 @@
       <input id="images" type="file" accept="image/png,image/jpeg,image/bmp" multiple webkitdirectory directory>
       <div id="selected" class="selected">Nenhuma pasta selecionada.</div>
 
-      <details>
-        <summary>Identificação opcional do treinamento</summary>
-        <div>
-          <label class="field">Nome ou código
-            <input id="training" type="text" value="LISTA" maxlength="100">
-          </label>
-          <label class="field">Data
-            <input id="date" type="date">
-          </label>
-        </div>
-      </details>
-
       <button id="process" class="primary" disabled>Processar imagens</button>
       <div id="status" role="status" aria-live="polite"></div>
 
@@ -89,11 +74,8 @@
     const result = document.querySelector('#resultado');
     const output = document.querySelector('#matriculas');
     const count = document.querySelector('#count');
-    const dateInput = document.querySelector('#date');
     let lastCsv = '';
     let lastFilename = 'matriculas.csv';
-
-    dateInput.value = new Date().toISOString().slice(0, 10);
 
     function imageFiles() {
       return [...input.files].filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|bmp)$/i.test(file.name));
@@ -118,10 +100,6 @@
 
       const form = new FormData();
       for (const file of files) form.append('images', file, file.webkitRelativePath || file.name);
-      const training = document.querySelector('#training').value.trim() || 'LISTA';
-      form.append('data', dateInput.value || new Date().toISOString().slice(0, 10));
-      form.append('id_treinamento', training);
-      form.append('nome_treinamento', training);
 
       try {
         const response = await fetch('/scan', { method: 'POST', body: form, headers: { Accept: 'application/json' } });

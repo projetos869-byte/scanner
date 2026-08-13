@@ -93,7 +93,6 @@ def main():
     # Matrículas presentes (quem estava na lista de presença lida pelo OCR)
     presentes = df[df["assinou"] == True].copy() if "assinou" in df.columns else df.copy()
     matriculas_presentes = presentes["matricula"].astype(str).str.strip().tolist()
-    nomes_presentes = presentes["nome"].fillna("").astype(str).str.strip().tolist() if "nome" in presentes.columns else [""] * len(presentes)
 
     # Só gera CSV no modo relacional (--data e --id-treinamento); planilha = controle_treinamentos_profissional
     if modo_relacional:
@@ -106,7 +105,7 @@ def main():
         if not nome_treino:
             nome_treino = id_treino
         gerar_csv_presenca(
-            data_str, id_treino, matriculas_presentes, nomes_presentes=nomes_presentes,
+            data_str, id_treino, matriculas_presentes,
             nome_treinamento=nome_treino, pasta_saida=_SCRIPT_DIR,
         )
 
