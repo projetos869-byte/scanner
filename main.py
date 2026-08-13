@@ -141,7 +141,7 @@ def scan(
     nome_arquivo = f"presenca_{id_treinamento}_{data_arq}.csv"
     csv_vazio = "\ufeffMatrícula\n"
 
-    from ler_documento_completo import extrair_matriculas_e_assinaturas
+    from ler_documento_completo import extrair_matriculas_e_assinaturas_lote
 
     # Ordenar por nome para manter ordem das folhas
     imagens_ordenadas = sorted(images, key=lambda f: (f.filename or "").lower())
@@ -165,39 +165,14 @@ def scan(
     score_threshold = 0.018
     min_digitos, max_digitos = 4, 7
 
-    if len(listas_imagens) == 1:
-        df = extrair_matriculas_e_assinaturas(
-            listas_imagens[0],
-            faixa_x=faixa_x,
-            ratio_assinatura=ratio_assinatura,
-            score_threshold_assinatura=score_threshold,
-            min_digitos=min_digitos,
-            max_digitos=max_digitos,
-            matriculas_manuscritas=False,
-        )
-    else:
-        # Várias folhas: precisamos de caminhos para a função atual; usar temp ou passar arrays
-        # A função varias_folhas espera lista de caminhos. Precisamos verificar assinatura.
-        # extrair_matriculas_e_assinaturas aceita Union[str, np.ndarray] — então podemos
-        # chamar extrair_matriculas_e_assinaturas para cada imagem e concatenar, ou
-        # ver se varias_folhas aceita só paths. Pelo código, varias_folhas recebe lista_caminhos.
-        # Então vamos processar cada imagem e concatenar manualmente.
-        listas_df = []
-        for idx, img in enumerate(listas_imagens, 1):
-            df_one = extrair_matriculas_e_assinaturas(
-                img,
-                faixa_x=faixa_x,
-                ratio_assinatura=ratio_assinatura,
-                score_threshold_assinatura=score_threshold,
-                min_digitos=min_digitos,
-                max_digitos=max_digitos,
-                matriculas_manuscritas=False,
-            )
-            if not df_one.empty:
-                df_one.insert(0, "folha", idx)
-                listas_df.append(df_one)
-        import pandas as pd
-        df = pd.concat(listas_df, ignore_index=True) if listas_df else pd.DataFrame()
+    df = extrair_matriculas_e_assinaturas_lote(
+        listas_imagens,
+        faixa_x=faixa_x,
+        ratio_assinatura=ratio_assinatura,
+        score_threshold_assinatura=score_threshold,
+        min_digitos=min_digitos,
+        max_digitos=max_digitos,
+    )
 
     if df.empty:
         csv_str = _gerar_csv_string([])

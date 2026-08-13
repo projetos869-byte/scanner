@@ -383,6 +383,103 @@ def _adicionar_assinaturas_por_linha(
     return out
 
 
+def extrair_matriculas_e_assinaturas_lote(
+    imagens: List[np.ndarray],
+    faixa_x: Tuple[float, float] = (0.095, 0.21),
+    ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
+    score_threshold_assinatura: float = 0.018,
+    min_digitos: int = 4,
+    max_digitos: int = 7,
+) -> pd.DataFrame:
+    """Processa todas as folhas com uma única execução do Tesseract."""
+    validas = [img for img in imagens if img is not None and img.size > 0]
+    if not validas:
+        return pd.DataFrame()
+
+    escala = 3.0
+    separador = 90
+    colunas = []
+    segmentos = []
+    largura_max = 1
+    y_cursor = 0
+    for folha, img in enumerate(validas, 1):
+        h, w = img.shape[:2]
+        x1, x2 = int(w * faixa_x[0]), int(w * faixa_x[1])
+        coluna = cv2.resize(
+            img[:, x1:x2], None, fx=escala, fy=escala,
+            interpolation=cv2.INTER_CUBIC,
+        )
+        colunas.append(coluna)
+        largura_max = max(largura_max, coluna.shape[1])
+        segmentos.append({
+            "folha": folha, "inicio": y_cursor, "fim": y_cursor + coluna.shape[0],
+            "imagem": img, "x1": x1,
+        })
+        y_cursor += coluna.shape[0] + separador
+
+    blocos = []
+    for coluna in colunas:
+        bloco = np.full((coluna.shape[0], largura_max, 3), 255, dtype=np.uint8)
+        if len(coluna.shape) == 2:
+            coluna = cv2.cvtColor(coluna, cv2.COLOR_GRAY2BGR)
+        bloco[:, :coluna.shape[1]] = coluna
+        blocos.append(bloco)
+        blocos.append(np.full((separador, largura_max, 3), 255, dtype=np.uint8))
+    composta = np.vstack(blocos[:-1])
+
+    deteccoes = _ocr_pagina_inteira_tesseract(
+        composta,
+        config=(
+            "--oem 1 --psm 4 -c tessedit_char_whitelist=0123456789 "
+            "-c user_defined_dpi=300"
+        ),
+    )
+
+    resultados = []
+    for segmento in segmentos:
+        candidatos = []
+        for cx, cy, texto, conf in deteccoes:
+            if not (segmento["inicio"] <= cy < segmento["fim"]):
+                continue
+            matricula = _eh_matricula_valida(texto, min_digitos, max_digitos)
+            if matricula:
+                candidatos.append({
+                    "y": (cy - segmento["inicio"]) / escala,
+                    "x": cx / escala + segmento["x1"],
+                    "matricula": matricula,
+                    "confianca": conf,
+                })
+        candidatos.sort(key=lambda item: item["y"])
+        img = segmento["imagem"]
+        tolerancia = min(32, max(12, img.shape[0] // 65))
+        unicos = []
+        for candidato in candidatos:
+            if unicos and abs(candidato["y"] - unicos[-1]["y"]) <= tolerancia:
+                if candidato["confianca"] > unicos[-1]["confianca"]:
+                    unicos[-1] = candidato
+            else:
+                unicos.append(candidato)
+        if not unicos:
+            continue
+        df = pd.DataFrame([
+            {
+                "linha": indice,
+                "matricula": item["matricula"],
+                "confianca": round(item["confianca"], 4),
+                "x_centro": int(item["x"]),
+                "y_centro": int(item["y"]),
+            }
+            for indice, item in enumerate(unicos, 1)
+        ])
+        df = _adicionar_assinaturas_por_linha(
+            img, df, ratio_assinatura, score_threshold_assinatura
+        )
+        df.insert(0, "folha", segmento["folha"])
+        resultados.append(df)
+
+    return pd.concat(resultados, ignore_index=True) if resultados else pd.DataFrame()
+
+
 def extrair_matriculas_e_assinaturas(
     caminho_ou_imagem: Union[str, np.ndarray],
     faixa_x: Tuple[float, float] = (0.095, 0.21),
