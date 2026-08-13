@@ -101,6 +101,7 @@ def _resposta_csv_ou_json(
     nome_arquivo: str,
     quantidade: int = 0,
     matriculas: list[str] | None = None,
+    quantidade_lidas: int = 0,
 ):
     """Se o cliente pediu CSV (retorno=csv ou Accept: text/csv), retorna Response CSV; senão JSON."""
     accept = (request.headers.get("accept") or "").lower()
@@ -117,6 +118,7 @@ def _resposta_csv_ou_json(
         "csv": csv_body,
         "nome_arquivo": nome_arquivo,
         "quantidade": quantidade,
+        "quantidade_lidas": quantidade_lidas,
         "matriculas": matriculas,
     }
     if erro:
@@ -193,4 +195,5 @@ def scan(
         nome_arquivo,
         len(matriculas_presentes),
         matriculas_presentes,
+        len(df),
     )

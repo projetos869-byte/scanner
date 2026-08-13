@@ -397,11 +397,10 @@ def extrair_matriculas_e_assinaturas_lote(
         return pd.DataFrame()
 
     escala = 3.0
-    separador = 90
+    separador = 120
+    por_linha = 3
     colunas = []
     segmentos = []
-    largura_max = 1
-    y_cursor = 0
     for folha, img in enumerate(validas, 1):
         h, w = img.shape[:2]
         x1, x2 = int(w * faixa_x[0]), int(w * faixa_x[1])
@@ -410,27 +409,44 @@ def extrair_matriculas_e_assinaturas_lote(
             interpolation=cv2.INTER_CUBIC,
         )
         colunas.append(coluna)
-        largura_max = max(largura_max, coluna.shape[1])
-        segmentos.append({
-            "folha": folha, "inicio": y_cursor, "fim": y_cursor + coluna.shape[0],
-            "imagem": img, "x1": x1,
-        })
-        y_cursor += coluna.shape[0] + separador
 
-    blocos = []
-    for coluna in colunas:
-        bloco = np.full((coluna.shape[0], largura_max, 3), 255, dtype=np.uint8)
+    # Uma coluna vertical muito alta faz o Tesseract ignorar partes do documento.
+    # Montar uma grade compacta preserva todas as folhas sem criar novos processos.
+    largura_celula = max(coluna.shape[1] for coluna in colunas)
+    alturas_linhas = []
+    for inicio in range(0, len(colunas), por_linha):
+        alturas_linhas.append(max(c.shape[0] for c in colunas[inicio:inicio + por_linha]))
+    largura_total = por_linha * largura_celula + (por_linha - 1) * separador
+    altura_total = sum(alturas_linhas) + max(0, len(alturas_linhas) - 1) * separador
+    composta = np.full((altura_total, largura_total, 3), 255, dtype=np.uint8)
+    offsets_y = []
+    cursor_y = 0
+    for altura in alturas_linhas:
+        offsets_y.append(cursor_y)
+        cursor_y += altura + separador
+
+    for indice, (coluna, img) in enumerate(zip(colunas, validas)):
+        linha, coluna_grade = divmod(indice, por_linha)
+        offset_x = coluna_grade * (largura_celula + separador)
+        offset_y = offsets_y[linha]
         if len(coluna.shape) == 2:
             coluna = cv2.cvtColor(coluna, cv2.COLOR_GRAY2BGR)
-        bloco[:, :coluna.shape[1]] = coluna
-        blocos.append(bloco)
-        blocos.append(np.full((separador, largura_max, 3), 255, dtype=np.uint8))
-    composta = np.vstack(blocos[:-1])
+        composta[offset_y:offset_y + coluna.shape[0], offset_x:offset_x + coluna.shape[1]] = coluna
+        w_original = img.shape[1]
+        segmentos.append({
+            "folha": indice + 1,
+            "x_inicio": offset_x,
+            "x_fim": offset_x + coluna.shape[1],
+            "y_inicio": offset_y,
+            "y_fim": offset_y + coluna.shape[0],
+            "imagem": img,
+            "x1": int(w_original * faixa_x[0]),
+        })
 
     deteccoes = _ocr_pagina_inteira_tesseract(
         composta,
         config=(
-            "--oem 1 --psm 4 -c tessedit_char_whitelist=0123456789 "
+            "--oem 1 --psm 6 -c tessedit_char_whitelist=0123456789 "
             "-c user_defined_dpi=300"
         ),
     )
@@ -439,13 +455,16 @@ def extrair_matriculas_e_assinaturas_lote(
     for segmento in segmentos:
         candidatos = []
         for cx, cy, texto, conf in deteccoes:
-            if not (segmento["inicio"] <= cy < segmento["fim"]):
+            if not (
+                segmento["x_inicio"] <= cx < segmento["x_fim"]
+                and segmento["y_inicio"] <= cy < segmento["y_fim"]
+            ):
                 continue
             matricula = _eh_matricula_valida(texto, min_digitos, max_digitos)
             if matricula:
                 candidatos.append({
-                    "y": (cy - segmento["inicio"]) / escala,
-                    "x": cx / escala + segmento["x1"],
+                    "y": (cy - segmento["y_inicio"]) / escala,
+                    "x": (cx - segmento["x_inicio"]) / escala + segmento["x1"],
                     "matricula": matricula,
                     "confianca": conf,
                 })

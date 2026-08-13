@@ -113,7 +113,9 @@
         lastFilename = data.nome_arquivo || 'matriculas.csv';
         result.style.display = 'block';
         statusBox.className = data.erro && !matriculas.length ? 'error' : 'ok';
-        statusBox.textContent = data.erro && !matriculas.length ? data.erro : 'Processamento concluído.';
+        statusBox.textContent = data.erro && !matriculas.length
+          ? data.erro
+          : `Processamento concluído: ${data.quantidade_lidas ?? matriculas.length} matrícula(s) lida(s), ${matriculas.length} com assinatura preenchida.`;
       } catch (error) {
         statusBox.className = 'error';
         statusBox.textContent = error.message || 'Erro inesperado ao processar.';
