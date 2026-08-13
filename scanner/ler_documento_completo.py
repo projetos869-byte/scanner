@@ -131,7 +131,7 @@ def _ocr_pagina_inteira_tesseract(
 
 def extrair_todas_matriculas(
     caminho_ou_imagem: Union[str, np.ndarray],
-    faixa_x: Tuple[float, float] = (0.06, 0.35),
+    faixa_x: Tuple[float, float] = (0.095, 0.21),
     min_digitos: int = 4,
     max_digitos: int = 7,
     normalizar_imagem: bool = True,
@@ -163,12 +163,25 @@ def extrair_todas_matriculas(
     # Lê somente a coluna de matrícula. Além de ser mais rápido, evita que textos
     # das demais colunas confundam o OCR. O eixo Y continua igual ao da folha.
     coluna_matricula = img[:, x_min:x_max]
-    deteccoes_coluna = _ocr_pagina_inteira_tesseract(
+    # As fotos enviadas costumam ter apenas 130–170 px nessa coluna. Ampliar
+    # antes do OCR preserva os traços dos dígitos e melhora muito a leitura.
+    escala_ocr = 3.0
+    coluna_ampliada = cv2.resize(
         coluna_matricula,
-        config="--oem 1 --psm 6 -c tessedit_char_whitelist=0123456789",
+        None,
+        fx=escala_ocr,
+        fy=escala_ocr,
+        interpolation=cv2.INTER_CUBIC,
+    )
+    deteccoes_coluna = _ocr_pagina_inteira_tesseract(
+        coluna_ampliada,
+        config=(
+            "--oem 1 --psm 4 -c tessedit_char_whitelist=0123456789 "
+            "-c user_defined_dpi=300"
+        ),
     )
     deteccoes = [
-        (cx + x_min, cy, texto, conf)
+        (cx / escala_ocr + x_min, cy / escala_ocr, texto, conf)
         for cx, cy, texto, conf in deteccoes_coluna
     ]
     if not deteccoes:
@@ -259,7 +272,7 @@ def _merge_resultados_por_y_relativo(
 
 def extrair_todas_matriculas_com_retry(
     caminho_ou_imagem: Union[str, np.ndarray],
-    faixa_x: Tuple[float, float] = (0.05, 0.38),
+    faixa_x: Tuple[float, float] = (0.095, 0.21),
     min_digitos: int = 4,
     max_digitos: int = 7,
     unir_normalizado_e_cru: bool = True,
@@ -281,52 +294,37 @@ def extrair_todas_matriculas_com_retry(
         path = caminho_ou_imagem
     if img is None or img.size == 0:
         return (pd.DataFrame(), np.array([])) if retornar_imagem_usada else pd.DataFrame()
-    df_norm = extrair_todas_matriculas(
-        path if path is not None else img,
-        faixa_x=faixa_x,
-        min_digitos=min_digitos,
-        max_digitos=max_digitos,
-        normalizar_imagem=True,
-        matriculas_manuscritas=matriculas_manuscritas,
-    )
-    if not unir_normalizado_e_cru:
-        if retornar_imagem_usada:
-            img_norm = normalizar_para_scan(img, tamanho_a4=A4_200_DPI, aplicar_binarizacao=False) if path is None else normalizar_para_scan(cv2.imread(path), tamanho_a4=A4_200_DPI, aplicar_binarizacao=False)
-            return df_norm, img_norm
-        return df_norm
-    img_crua = img if path is None else cv2.imread(path)
-    if img_crua is None:
-        if retornar_imagem_usada:
-            img_norm = normalizar_para_scan(img, tamanho_a4=A4_200_DPI, aplicar_binarizacao=False)
-            return df_norm, img_norm
-        return df_norm
+    # Tentativa rápida na imagem original. Mantém as proporções reais da tabela
+    # e evita que um recorte parcial seja deformado para o formato A4.
     df_cru = extrair_todas_matriculas(
-        img_crua,
+        img,
         faixa_x=faixa_x,
         min_digitos=min_digitos,
         max_digitos=max_digitos,
         normalizar_imagem=False,
         matriculas_manuscritas=matriculas_manuscritas,
     )
-    def _score(d):
-        if d.empty:
-            return -1, 999, 0
-        n = len(d)
-        dup = d["matricula"].duplicated().sum()
-        conf = d["confianca"].mean()
-        return n, dup, conf
-    s_norm = _score(df_norm)
-    s_cru = _score(df_cru)
-    use_norm = (
-        s_norm[0] > s_cru[0]
-        or (s_norm[0] == s_cru[0] and s_norm[1] < s_cru[1])
-        or (s_norm[0] == s_cru[0] and s_norm[1] == s_cru[1] and s_norm[2] >= s_cru[2])
+    if not df_cru.empty or not unir_normalizado_e_cru:
+        if retornar_imagem_usada:
+            return df_cru, img
+        return df_cru
+
+    # Fallback: somente se a imagem original não produzir nenhuma matrícula,
+    # corrige perspectiva e tenta mais uma vez.
+    img_norm = normalizar_para_scan(
+        img, tamanho_a4=None, target_width=1800, aplicar_binarizacao=False
     )
-    chosen = df_norm if use_norm else df_cru
-    img_used = normalizar_para_scan(img_crua, tamanho_a4=A4_200_DPI, aplicar_binarizacao=False) if use_norm else img_crua
+    df_norm = extrair_todas_matriculas(
+        img_norm,
+        faixa_x=faixa_x,
+        min_digitos=min_digitos,
+        max_digitos=max_digitos,
+        normalizar_imagem=False,
+        matriculas_manuscritas=matriculas_manuscritas,
+    )
     if retornar_imagem_usada:
-        return chosen, img_used
-    return chosen
+        return df_norm, img_norm
+    return df_norm
 
 
 def _adicionar_assinaturas_por_linha(
@@ -387,7 +385,7 @@ def _adicionar_assinaturas_por_linha(
 
 def extrair_matriculas_e_assinaturas(
     caminho_ou_imagem: Union[str, np.ndarray],
-    faixa_x: Tuple[float, float] = (0.05, 0.38),
+    faixa_x: Tuple[float, float] = (0.095, 0.21),
     ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
     score_threshold_assinatura: float = 0.018,
     min_digitos: int = 4,
@@ -404,9 +402,9 @@ def extrair_matriculas_e_assinaturas(
         faixa_x=faixa_x,
         min_digitos=min_digitos,
         max_digitos=max_digitos,
-        # Uma única leitura normalizada. O modo antigo fazia duas leituras
-        # completas por folha e escolhia o melhor resultado.
-        unir_normalizado_e_cru=False,
+        # Imagem original primeiro; normalização apenas como fallback se o OCR
+        # não encontrar nenhuma matrícula.
+        unir_normalizado_e_cru=True,
         retornar_imagem_usada=True,
         matriculas_manuscritas=matriculas_manuscritas,
     )
@@ -422,7 +420,7 @@ def extrair_matriculas_e_assinaturas(
 
 def extrair_matriculas_e_assinaturas_varias_folhas(
     lista_caminhos: List[str],
-    faixa_x: Tuple[float, float] = (0.05, 0.38),
+    faixa_x: Tuple[float, float] = (0.095, 0.21),
     ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
     score_threshold_assinatura: float = 0.018,
     min_digitos: int = 4,

@@ -160,7 +160,7 @@ def scan(
         return _resposta_csv_ou_json(request, retorno, csv_vazio, "Nenhuma imagem válida", nome_arquivo)
 
     # OCR com a mesma lógica do scanner_cli
-    faixa_x = (0.05, 0.38)
+    faixa_x = (0.095, 0.21)
     ratio_assinatura = (0.55, 0.80)
     score_threshold = 0.018
     min_digitos, max_digitos = 4, 7

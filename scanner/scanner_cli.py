@@ -71,13 +71,13 @@ def main():
     primeira = lista[0]
     if usar_varias:
         df = extrair_matriculas_e_assinaturas_varias_folhas(
-            lista, faixa_x=(0.05, 0.38), ratio_assinatura=(0.55, 0.80),
+            lista, faixa_x=(0.095, 0.21), ratio_assinatura=(0.55, 0.80),
             score_threshold_assinatura=0.018, min_digitos=4, max_digitos=7,
             matriculas_manuscritas=False,
         )
     else:
         df = extrair_matriculas_e_assinaturas(
-            primeira, faixa_x=(0.05, 0.38), ratio_assinatura=(0.55, 0.80),
+            primeira, faixa_x=(0.095, 0.21), ratio_assinatura=(0.55, 0.80),
             score_threshold_assinatura=0.018, min_digitos=4, max_digitos=7,
             matriculas_manuscritas=False,
         )
