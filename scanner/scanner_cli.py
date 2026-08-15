@@ -71,14 +71,12 @@ def main():
     primeira = lista[0]
     if usar_varias:
         df = extrair_matriculas_e_assinaturas_varias_folhas(
-            lista, faixa_x=(0.095, 0.21), ratio_assinatura=(0.55, 0.80),
-            score_threshold_assinatura=0.018, min_digitos=4, max_digitos=7,
+            lista, faixa_x=(0.095, 0.21), min_digitos=4, max_digitos=7,
             matriculas_manuscritas=False,
         )
     else:
         df = extrair_matriculas_e_assinaturas(
-            primeira, faixa_x=(0.095, 0.21), ratio_assinatura=(0.55, 0.80),
-            score_threshold_assinatura=0.018, min_digitos=4, max_digitos=7,
+            primeira, faixa_x=(0.095, 0.21), min_digitos=4, max_digitos=7,
             matriculas_manuscritas=False,
         )
         if not df.empty:
@@ -91,8 +89,7 @@ def main():
         return 0
 
     # Matrículas presentes (quem estava na lista de presença lida pelo OCR)
-    presentes = df[df["assinou"] == True].copy() if "assinou" in df.columns else df.copy()
-    matriculas_presentes = presentes["matricula"].astype(str).str.strip().tolist()
+    matriculas_presentes = df["matricula"].astype(str).str.strip().tolist()
 
     # Só gera CSV no modo relacional (--data e --id-treinamento); planilha = controle_treinamentos_profissional
     if modo_relacional:

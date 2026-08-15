@@ -143,7 +143,7 @@ def scan(
     nome_arquivo = f"presenca_{id_treinamento}_{data_arq}.csv"
     csv_vazio = "\ufeffMatrícula\n"
 
-    from ler_documento_completo import extrair_matriculas_e_assinaturas_lote
+    from ler_documento_completo import extrair_matriculas_lote
 
     # Ordenar por nome para manter ordem das folhas
     imagens_ordenadas = sorted(images, key=lambda f: (f.filename or "").lower())
@@ -163,15 +163,11 @@ def scan(
 
     # OCR com a mesma lógica do scanner_cli
     faixa_x = (0.095, 0.21)
-    ratio_assinatura = (0.55, 0.80)
-    score_threshold = 0.018
     min_digitos, max_digitos = 4, 7
 
-    df = extrair_matriculas_e_assinaturas_lote(
+    df = extrair_matriculas_lote(
         listas_imagens,
         faixa_x=faixa_x,
-        ratio_assinatura=ratio_assinatura,
-        score_threshold_assinatura=score_threshold,
         min_digitos=min_digitos,
         max_digitos=max_digitos,
     )
@@ -180,12 +176,7 @@ def scan(
         csv_str = _gerar_csv_string([])
         return _resposta_csv_ou_json(request, retorno, csv_str, "Nenhuma matrícula encontrada no OCR", nome_arquivo)
 
-    # Só considera presente quem tem assinatura detectada (coluna assinou); se não existir, usa todas as matrículas
-    if "assinou" in df.columns:
-        df_presentes = df[df["assinou"] == True]
-    else:
-        df_presentes = df
-    matriculas_presentes = df_presentes["matricula"].astype(str).str.strip().tolist()
+    matriculas_presentes = df["matricula"].astype(str).str.strip().tolist()
     csv_str = _gerar_csv_string(matriculas_presentes)
     return _resposta_csv_ou_json(
         request,

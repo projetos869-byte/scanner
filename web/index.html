@@ -40,7 +40,7 @@
   <main>
     <section class="card">
       <h1>Scanner de Treinamentos</h1>
-      <p class="lead">Escolha a pasta com as fotos das listas. O sistema retorna somente as matrículas das linhas com o campo de assinatura preenchido.</p>
+      <p class="lead">Escolha a pasta com as fotos das listas. O sistema lê as matrículas visíveis; risque as matrículas que não devem entrar.</p>
 
       <label class="drop" for="images">
         <span class="folder-title">Selecionar pasta de imagens</span>
@@ -115,7 +115,7 @@
         statusBox.className = data.erro && !matriculas.length ? 'error' : 'ok';
         statusBox.textContent = data.erro && !matriculas.length
           ? data.erro
-          : `Processamento concluído: ${data.quantidade_lidas ?? matriculas.length} matrícula(s) lida(s), ${matriculas.length} com assinatura preenchida.`;
+          : `Processamento concluído: ${matriculas.length} matrícula(s) lida(s).`;
       } catch (error) {
         statusBox.className = 'error';
         statusBox.textContent = error.message || 'Erro inesperado ao processar.';

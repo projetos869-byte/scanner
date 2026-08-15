@@ -327,67 +327,9 @@ def extrair_todas_matriculas_com_retry(
     return df_norm
 
 
-def _adicionar_assinaturas_por_linha(
-    img: np.ndarray,
-    df: pd.DataFrame,
-    ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
-    score_threshold_assinatura: float = 0.018,
-) -> pd.DataFrame:
-    """
-    Para cada linha do df (y_centro), recorta a célula da coluna ASSINATURA e
-    detecta se está assinada. Adiciona colunas assinou e score_assinatura.
-    """
-    if img is None or img.size == 0 or df.empty or "y_centro" not in df.columns:
-        df = df.copy()
-        df["assinou"] = False
-        df["score_assinatura"] = 0.0
-        return df
-    try:
-        from pipeline_foto_torta import assinatura_presente
-    except ImportError:
-        df = df.copy()
-        df["assinou"] = False
-        df["score_assinatura"] = 0.0
-        return df
-    h, w = img.shape[:2]
-    x1 = int(w * ratio_assinatura[0])
-    x2 = int(w * ratio_assinatura[1])
-    ys = df["y_centro"].values
-    n = len(ys)
-    assinou_list = []
-    score_list = []
-    for i in range(n):
-        yc = int(ys[i])
-        if n == 1:
-            dy = max(25, h // 12)
-        elif i == 0:
-            # Primeira linha: recorte mais conservador para não pegar linha da tabela ou linha de baixo
-            dy = max(20, int((ys[1] - yc) * 0.4))
-        elif i == n - 1:
-            dy = max(25, (yc - ys[i - 1]) // 2)
-        else:
-            dy = max(25, min(ys[i + 1] - yc, yc - ys[i - 1]) // 2)
-        y1 = max(0, yc - dy)
-        y2 = min(h, yc + dy)
-        cell = img[y1:y2, x1:x2]
-        if cell.size == 0:
-            assinou_list.append(False)
-            score_list.append(0.0)
-            continue
-        assinou, score = assinatura_presente(cell, score_threshold=score_threshold_assinatura)
-        assinou_list.append(assinou)
-        score_list.append(round(score, 6))
-    out = df.copy()
-    out["assinou"] = assinou_list
-    out["score_assinatura"] = score_list
-    return out
-
-
-def extrair_matriculas_e_assinaturas_lote(
+def extrair_matriculas_lote(
     imagens: List[np.ndarray],
     faixa_x: Tuple[float, float] = (0.095, 0.21),
-    ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
-    score_threshold_assinatura: float = 0.018,
     min_digitos: int = 4,
     max_digitos: int = 7,
 ) -> pd.DataFrame:
@@ -490,9 +432,6 @@ def extrair_matriculas_e_assinaturas_lote(
             }
             for indice, item in enumerate(unicos, 1)
         ])
-        df = _adicionar_assinaturas_por_linha(
-            img, df, ratio_assinatura, score_threshold_assinatura
-        )
         df.insert(0, "folha", segmento["folha"])
         resultados.append(df)
 
@@ -502,8 +441,6 @@ def extrair_matriculas_e_assinaturas_lote(
 def extrair_matriculas_e_assinaturas(
     caminho_ou_imagem: Union[str, np.ndarray],
     faixa_x: Tuple[float, float] = (0.095, 0.21),
-    ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
-    score_threshold_assinatura: float = 0.018,
     min_digitos: int = 4,
     max_digitos: int = 7,
     matriculas_manuscritas: bool = False,
@@ -524,21 +461,12 @@ def extrair_matriculas_e_assinaturas(
         retornar_imagem_usada=True,
         matriculas_manuscritas=matriculas_manuscritas,
     )
-    if df.empty:
-        return df
-    return _adicionar_assinaturas_por_linha(
-        img_used,
-        df,
-        ratio_assinatura=ratio_assinatura,
-        score_threshold_assinatura=score_threshold_assinatura,
-    )
+    return df
 
 
 def extrair_matriculas_e_assinaturas_varias_folhas(
     lista_caminhos: List[str],
     faixa_x: Tuple[float, float] = (0.095, 0.21),
-    ratio_assinatura: Tuple[float, float] = (0.55, 0.80),
-    score_threshold_assinatura: float = 0.018,
     min_digitos: int = 4,
     max_digitos: int = 7,
     matriculas_manuscritas: bool = False,
@@ -557,14 +485,12 @@ def extrair_matriculas_e_assinaturas_varias_folhas(
         df = extrair_matriculas_e_assinaturas(
             caminho,
             faixa_x=faixa_x,
-            ratio_assinatura=ratio_assinatura,
-            score_threshold_assinatura=score_threshold_assinatura,
             min_digitos=min_digitos,
             max_digitos=max_digitos,
             matriculas_manuscritas=matriculas_manuscritas,
         )
         if df.empty:
-            df = pd.DataFrame(columns=["linha", "matricula", "confianca", "x_centro", "y_centro", "assinou", "score_assinatura"])
+            df = pd.DataFrame(columns=["linha", "matricula", "confianca", "x_centro", "y_centro"])
         df.insert(0, "folha", idx)
         df.insert(1, "arquivo", os.path.basename(caminho))
         listas.append(df)
